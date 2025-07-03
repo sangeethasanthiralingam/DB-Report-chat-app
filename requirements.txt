@@ -7,4 +7,5 @@ SQLAlchemy
 networkx
 matplotlib
 pandas
+redis
 git-filter-repo

@@ -9,7 +9,7 @@ from io import BytesIO
 import os
 import pymysql
 import pymysql.cursors
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect as sqla_inspect, text
 from urllib.parse import quote_plus 
 import json
 from datetime import datetime
@@ -18,6 +18,9 @@ import networkx as nx
 import time
 import logging
 from dotenv import load_dotenv
+import redis
+import hashlib
+import inspect
 
 load_dotenv()
 # Configure logging
@@ -42,9 +45,54 @@ DB_CONFIG = {
     "database": os.getenv("DB_NAME", "db") 
 }
 
+# Redis connection (add to top-level, after loading .env)
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+redis_client = None
+try:
+    redis_client = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
+    redis_client.ping()
+    logging.info('Connected to Redis successfully.')
+except Exception as e:
+    logging.warning(f'Could not connect to Redis: {e}')
+    redis_client = None
+
+# Global SQLAlchemy engine with connection pooling
+GLOBAL_ENGINE = None
+def get_global_engine():
+    global GLOBAL_ENGINE
+    if GLOBAL_ENGINE is None:
+        password = quote_plus(DB_CONFIG['password'])
+        GLOBAL_ENGINE = create_engine(
+            f"mysql+pymysql://{DB_CONFIG['user']}:{password}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}",
+            pool_size=10, max_overflow=20, pool_recycle=1800, pool_pre_ping=True
+        )
+    return GLOBAL_ENGINE
+
+# Redis cache helpers
+def redis_get(key):
+    if redis_client:
+        try:
+            schema_json = redis_client.get(key)
+            if inspect.isawaitable(schema_json):
+                raise RuntimeError("redis_get returned an awaitable, but this function is not async.")
+            if schema_json:
+                return schema_json
+        except Exception as e:
+            logging.warning(f'Redis get error: {e}')
+    return None
+
+def redis_set(key, value, ex=None):
+    if redis_client:
+        try:
+            redis_client.set(key, value, ex=ex)
+        except Exception as e:
+            logging.warning(f'Redis set error: {e}')
+
 # Cache for database schema and metadata
 DB_METADATA_CACHE = {}
 CACHE_EXPIRY_MINUTES = 60
+QUERY_CACHE_EXPIRY_SECONDS = 600  # 10 minutes
+LLM_CACHE_EXPIRY_SECONDS = 3600   # 1 hour
 
 # Initialize session for conversation history
 def init_session():
@@ -108,17 +156,26 @@ def get_sqlalchemy_engine(database=None):
     )
 
 def get_database_schema(database=None):
-    """Get complete schema with table relationships and sample data"""
+    """Get complete schema with table relationships and sample data, with Redis caching"""
     start_time = time.time()
     cache_key = f"schema_{database or 'default'}"
-    
-    # Check cache
+
+    schema_json = redis_get(cache_key)
+    if schema_json:
+        try:
+            schema_info = json.loads(schema_json)
+            logging.info(f"Schema for '{database}' loaded from Redis in {time.time() - start_time:.4f} seconds.")
+            return schema_info
+        except Exception as e:
+            logging.warning(f"Failed to load schema from Redis: {e}")
+
+    # Fallback to in-memory cache
     if cache_key in DB_METADATA_CACHE:
         cached_data = DB_METADATA_CACHE[cache_key]
         if (datetime.now() - cached_data['timestamp']).total_seconds() < CACHE_EXPIRY_MINUTES * 60:
-            logging.info(f"Schema for '{database}' loaded in {time.time() - start_time:.4f} seconds.")
+            logging.info(f"Schema for '{database}' loaded from memory in {time.time() - start_time:.4f} seconds.")
             return cached_data['schema']
-    
+
     schema_info = {
         "tables": {},
         "relationships": [],
@@ -126,8 +183,8 @@ def get_database_schema(database=None):
     }
     
     try:
-        engine = get_sqlalchemy_engine(database)
-        inspector = inspect(engine)
+        engine = get_global_engine()
+        inspector = sqla_inspect(engine)
         
         # Get all tables
         tables = inspector.get_table_names()
@@ -176,7 +233,12 @@ def get_database_schema(database=None):
                     "target_column": fk['referred_columns'][0]
                 })
         
-        # Cache the schema
+        # Cache in Redis
+        try:
+            redis_set(cache_key, json.dumps(schema_info, default=str), ex=CACHE_EXPIRY_MINUTES*60)
+        except Exception as e:
+            logging.warning(f"Failed to set schema in Redis: {e}")
+        # Cache in memory
         DB_METADATA_CACHE[cache_key] = {
             "schema": schema_info,
             "timestamp": datetime.now()
@@ -357,12 +419,32 @@ def handle_full_documentation_request(database):
     except Exception as e:
         return f"Error generating documentation: {e}"
 
+def get_query_cache_key(sql, database=None):
+    return f"queryres_{database or 'default'}_{hash(sql)}"
+
 def execute_query(sql, database=None):
-    """Execute SQL and return DataFrame and error"""
+    """Execute SQL and return DataFrame and error, with Redis caching"""
     start_time = time.time()
+    cache_key = get_query_cache_key(sql, database)
+    # Try Redis cache first
+    cached = redis_get(cache_key)
+    if inspect.isawaitable(cached):
+        raise RuntimeError("redis_get returned an awaitable, but this function is not async.")
+    if cached:
+        try:
+            df = pd.read_json(cached, orient='split')
+            logging.info(f"Query result loaded from Redis in {time.time() - start_time:.4f} seconds.")
+            return df, None
+        except Exception as e:
+            logging.warning(f"Failed to load query result from Redis: {e}")
     try:
-        engine = get_sqlalchemy_engine(database)
-        df = pd.read_sql(text(sql), engine)  # Wrap SQL with text() for SQLAlchemy 2.0
+        engine = get_global_engine()
+        df = pd.read_sql(text(sql), engine)
+        # Cache result in Redis
+        try:
+            redis_set(cache_key, df.to_json(orient='split'), ex=QUERY_CACHE_EXPIRY_SECONDS)
+        except Exception as e:
+            logging.warning(f"Failed to set query result in Redis: {e}")
         logging.info(f"SQL query executed in {time.time() - start_time:.4f} seconds. Result size: {len(df)} rows.")
         return df, None
     except Exception as e:
@@ -811,8 +893,6 @@ def after_request(response):
 def home():
     init_session()
     return render_template('index.html')
-
-
 
 @app.route('/chat', methods=['POST'])
 def chat():
