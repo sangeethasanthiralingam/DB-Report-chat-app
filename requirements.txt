@@ -9,3 +9,4 @@ matplotlib
 pandas
 redis
 git-filter-repo
+openai>=1.0.0 

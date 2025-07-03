@@ -1,4 +1,4 @@
-import openai
+from openai import OpenAI
 from flask import Flask, request, jsonify, render_template, session, g
 import pandas as pd
 import matplotlib
@@ -21,6 +21,8 @@ from dotenv import load_dotenv
 import redis
 import hashlib
 import inspect
+import re
+from collections import defaultdict
 
 load_dotenv()
 # Configure logging
@@ -34,7 +36,7 @@ app.config['SESSION_TYPE'] = 'filesystem'
 Session(app)
 
 # Configure OpenAI
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # MySQL DB config - Single database only
 DB_CONFIG = {
@@ -251,78 +253,67 @@ def get_database_schema(database=None):
         logging.error(f"Error getting schema: {e}")
         return None
 
-def generate_sql(question, database=None, error_context=None):
-    """Generate SQL query using enhanced prompt with schema understanding and conversation context"""
+def extract_relevant_tables_columns(question, schema_info):
+    """Extract relevant tables and columns from the question using simple keyword matching."""
+    q = question.lower()
+    relevant_tables = set()
+    relevant_columns = defaultdict(set)
+    for table, info in schema_info['tables'].items():
+        if table.lower() in q:
+            relevant_tables.add(table)
+        for col in info['columns']:
+            if col['name'].lower() in q:
+                relevant_tables.add(table)
+                relevant_columns[table].add(col['name'])
+    # Fallback: if no tables found, return all (to avoid empty prompt)
+    if not relevant_tables:
+        return set(schema_info['tables'].keys()), defaultdict(set)
+    return relevant_tables, relevant_columns
+
+# --- Token-Optimized SQL Generation ---
+def generate_sql_token_optimized(question, database=None, error_context=None):
     start_time = time.time()
     schema_info = get_database_schema(database)
     if not schema_info:
         return None
-    
-    # Get conversation context
     conversation_context = get_conversation_context()
-    
-    # Format schema information for the prompt
-    schema_prompt = "Database Schema:\n"
-    for table_name, table_info in schema_info['tables'].items():
+    relevant_tables, relevant_columns = extract_relevant_tables_columns(question, schema_info)
+    schema_prompt = "Database Schema (Relevant Tables):\n"
+    for table_name in relevant_tables:
+        table_info = schema_info['tables'][table_name]
         schema_prompt += f"\nTable: {table_name}\n"
         schema_prompt += "Columns:\n"
         for col in table_info['columns']:
-            schema_prompt += f"- {col['name']} ({col['type']})"
-            if col['primary_key']:
-                schema_prompt += " [PRIMARY KEY]"
-            schema_prompt += "\n"
-        
+            if not relevant_columns[table_name] or col['name'] in relevant_columns[table_name]:
+                schema_prompt += f"- {col['name']} ({col['type']})"
+                if col['primary_key']:
+                    schema_prompt += " [PRIMARY KEY]"
+                schema_prompt += "\n"
         if table_info['primary_key']:
             schema_prompt += f"Primary Key: {', '.join(table_info['primary_key'])}\n"
-        
         if table_info['foreign_keys']:
             schema_prompt += "Foreign Keys:\n"
             for fk in table_info['foreign_keys']:
                 schema_prompt += f"- {fk['constrained_columns'][0]} → {fk['referred_table']}.{fk['referred_columns'][0]}\n"
-        
         if table_info['sample_data']:
             schema_prompt += "Sample Data:\n"
-            for row in table_info['sample_data'][:2]:  # Show first 2 rows
+            for row in table_info['sample_data'][:2]:
                 schema_prompt += str(row) + "\n"
-    
-    # Add relationships
+    # Add relationships for relevant tables
     if schema_info['relationships']:
-        schema_prompt += "\nTable Relationships:\n"
-        for rel in schema_info['relationships']:
-            schema_prompt += f"{rel['source_table']}.{rel['source_column']} → {rel['target_table']}.{rel['target_column']}\n"
-    
-    # Build the enhanced prompt with conversation context
-    context_prompt = ""
-    if conversation_context:
-        context_prompt = f"""
-        {conversation_context}
-        
-        Consider the conversation history above when generating the SQL query.
-        If the user is referring to previous results or asking follow-up questions,
-        make sure to maintain consistency with the previous queries.
-        """
-    
-    error_feedback_prompt = ""
-    if error_context:
-        error_feedback_prompt = f"""
-        The previously generated query failed with the error: "{error_context}".
-        This indicates that there is likely an issue with table or column names in the query.
-        Please review the database schema and sample data provided above very carefully.
-        You MUST ONLY use the tables and columns listed in the schema.
-        Pay close attention to the sample data as it shows real examples of column names and content.
-        Correct the query based on this feedback.
-        """
-
+        rels = [rel for rel in schema_info['relationships'] if rel['source_table'] in relevant_tables or rel['target_table'] in relevant_tables]
+        if rels:
+            schema_prompt += "\nTable Relationships:\n"
+            for rel in rels:
+                schema_prompt += f"{rel['source_table']}.{rel['source_column']} → {rel['target_table']}.{rel['target_column']}\n"
+    context_prompt = f"\n{conversation_context}\n" if conversation_context else ""
+    error_feedback_prompt = f"\nThe previously generated query failed with the error: \"{error_context}\".\n" if error_context else ""
     prompt = f"""
     You are an expert SQL analyst with deep knowledge of this database schema:
     {schema_prompt}
-    
     {context_prompt}
-
     {error_feedback_prompt}
-    
-    For the following question: "{question}"
-    
+    For the following question: \"{question}\"
     Generate the most appropriate SQL query following these rules:
     1. Use only the tables and columns that exist in the schema
     2. Prefer JOINs over subqueries when possible
@@ -331,33 +322,36 @@ def generate_sql(question, database=None, error_context=None):
     5. For time series data, use appropriate date functions
     6. If this is a follow-up question, consider the context from previous queries
     7. Return ONLY the SQL query, no explanations or markdown
-    
     If the question cannot be answered with the available schema, return: 
     --ERROR: Question cannot be answered with available data
-    
     SQL Query:
     """
-    
+    # --- LLM Result Caching ---
+    llm_cache_key = f"llm_sql_{hash(question + json.dumps(list(relevant_tables)))}_{database or 'default'}"
+    cached_sql = redis_get(llm_cache_key)
+    if cached_sql:
+        return cached_sql
     try:
-        # Use the current OpenAI API format
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",  # Updated to a valid model name
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
             max_tokens=500
         )
-        sql = response['choices'][0]['message']['content'].strip() # type: ignore
-        
-        # Clean up the SQL
+        logging.info(f"OpenAI SQL prompt:\n{prompt}")
+        if response.usage:
+            logging.info(f"OpenAI API usage for SQL generation: {response.usage.prompt_tokens} prompt tokens, {response.usage.completion_tokens} completion tokens.")
+        sql = (response.choices[0].message.content or "").strip()
         if sql.startswith("```sql"):
             sql = sql[6:-3].strip()
         elif sql.startswith("```"):
             sql = sql[3:-3].strip()
-        
-        logging.info(f"SQL generated in {time.time() - start_time:.4f} seconds.")
+        if not sql.startswith("--ERROR"):
+            redis_set(llm_cache_key, sql, ex=LLM_CACHE_EXPIRY_SECONDS)
+        logging.info(f"Token-optimized SQL generated in {time.time() - start_time:.4f} seconds.")
         return sql if not sql.startswith("--ERROR") else None
     except Exception as e:
-        logging.error(f"Error generating SQL: {e}")
+        logging.error(f"Error generating SQL (token-optimized): {e}")
         return None
 
 def determine_response_type(question, data_preview=None):
@@ -381,13 +375,16 @@ def determine_response_type(question, data_preview=None):
     """
     
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
             max_tokens=10
         )
-        response_type = response['choices'][0]['message']['content'].strip().lower() # type: ignore
+        logging.info(f"OpenAI response type prompt:\n{prompt}")
+        if response.usage:
+            logging.info(f"OpenAI API usage for response type determination: {response.usage.prompt_tokens} prompt tokens, {response.usage.completion_tokens} completion tokens.")
+        response_type = (response.choices[0].message.content or "").strip().lower()
         logging.info(f"Response type determined as '{response_type}' in {time.time() - start_time:.4f} seconds.")
         return response_type
     except Exception as e:
@@ -407,13 +404,16 @@ def handle_full_documentation_request(database):
     Structure your answer with sections: Overview, Database Structure, Table Descriptions, Relationships, and any other relevant sections.
     """
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=2048  # or higher, if your model/account allows
         )
-        content = response['choices'][0]['message']['content'].strip() # type: ignore
+        logging.info(f"OpenAI full documentation prompt:\n{prompt}")
+        if response.usage:
+            logging.info(f"OpenAI API usage for full documentation: {response.usage.prompt_tokens} prompt tokens, {response.usage.completion_tokens} completion tokens.")
+        content = (response.choices[0].message.content or "").strip()
         logging.info(f"Full documentation generated in {time.time() - start_time:.4f} seconds.")
         return content
     except Exception as e:
@@ -547,13 +547,16 @@ def generate_nl_from_data(question, df):
     """
     
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=250
         )
-        content = response['choices'][0]['message']['content'].strip() # type: ignore
+        logging.info(f"OpenAI NL generation prompt:\n{prompt}")
+        if response.usage:
+            logging.info(f"OpenAI API usage for NL generation: {response.usage.prompt_tokens} prompt tokens, {response.usage.completion_tokens} completion tokens.")
+        content = (response.choices[0].message.content or "").strip()
         logging.info(f"Natural language response generated in {time.time() - start_time:.4f} seconds.")
         return content
     except Exception as e:
@@ -973,8 +976,8 @@ def chat():
                     "conversation_count": len(session.get('conversation_history', []))
                 })
 
-        # Step 1: Generate SQL
-        sql = generate_sql(question, DB_CONFIG['database'])
+        # Step 1: Generate SQL (token-optimized)
+        sql = generate_sql_token_optimized(question, DB_CONFIG['database'])
 
         if sql:
             # Step 2: Execute query and handle errors with a retry
@@ -985,7 +988,7 @@ def chat():
                 # MySQL error code 1054 is for "Unknown column"
                 if "1054" in error_message or "no such column" in error_message.lower():
                     logging.warning(f"SQL query failed with a schema error. Retrying generation. Error: {error_message}")
-                    sql = generate_sql(question, DB_CONFIG['database'], error_context=error_message)
+                    sql = generate_sql_token_optimized(question, DB_CONFIG['database'], error_context=error_message)
                     if sql:
                         df, err = execute_query(sql, DB_CONFIG['database'])
             
@@ -1112,13 +1115,16 @@ def chat():
             Respond concisely and conversationally.
             """
             try:
-                response = openai.ChatCompletion.create(
+                response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0,
                     max_tokens=150
                 )
-                content = response['choices'][0]['message']['content'].strip() # type: ignore
+                logging.info(f"OpenAI fallback prompt:\n{prompt}")
+                if response.usage:
+                    logging.info(f"OpenAI API usage for fallback response: {response.usage.prompt_tokens} prompt tokens, {response.usage.completion_tokens} completion tokens.")
+                content = (response.choices[0].message.content or "").strip()
                 logging.info(f"Fallback LLM response generated in {time.time() - start_time:.4f} seconds.")
             except Exception as e:
                 logging.error(f"Error generating fallback LLM response: {e}")
@@ -1161,6 +1167,53 @@ def clear_conversation():
     session['conversation_history'] = []
     session.modified = True
     return jsonify({"message": "Conversation history cleared"})
+
+@app.route('/batch_chat', methods=['POST'])
+def batch_chat():
+    try:
+        init_session()
+        data = request.json
+        if not data or 'questions' not in data or not isinstance(data['questions'], list):
+            return jsonify({"error": "Request must include a 'questions' list."}), 400
+        responses = []
+        schema_info = get_database_schema(DB_CONFIG['database'])
+        for question in data['questions']:
+            q = question.strip()
+            if not q:
+                responses.append({"type": "text", "content": "Empty question.", "sql": ""})
+                continue
+            # Data privacy check
+            sensitive_keywords = ['password', 'passwd', 'secret', 'credential', 'token']
+            if any(word in q.lower() for word in sensitive_keywords):
+                responses.append({"type": "text", "content": "Sorry, I can't provide sensitive information such as passwords.", "sql": ""})
+                continue
+            # Token-optimized SQL generation
+            sql = generate_sql_token_optimized(q, DB_CONFIG['database'])
+            if sql:
+                df, err = execute_query(sql, DB_CONFIG['database'])
+                if err:
+                    responses.append({"type": "text", "content": f"Error: {str(err)}", "sql": sql})
+                elif df is not None:
+                    response_type = determine_response_type(q, df.head(2).to_dict())
+                    if response_type == "card":
+                        content = format_card_response(df)
+                        responses.append({"type": "card", "content": content, "sql": sql})
+                    elif response_type in ("bar", "line", "pie", "scatter"):
+                        chart = generate_visualization(df, response_type)
+                        responses.append({"type": "chart", "chart_type": response_type, "content": chart, "sql": sql, "data_preview": df.head(5).to_dict(orient='records')})
+                    elif response_type == "text":
+                        content = format_text_response(df, q)
+                        responses.append({"type": "text", "content": content, "sql": sql})
+                    else:
+                        responses.append({"type": "table", "content": df.to_dict(orient='records'), "sql": sql})
+                else:
+                    responses.append({"type": "text", "content": "No data found.", "sql": sql})
+            else:
+                responses.append({"type": "text", "content": "Could not generate SQL for this question.", "sql": ""})
+        return jsonify({"responses": responses})
+    except Exception as e:
+        logging.error(f"Error in batch_chat endpoint: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
