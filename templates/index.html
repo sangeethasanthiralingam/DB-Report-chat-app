@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Database Analytics Chat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --primary-color: #3b82f6;
+            --secondary-color: #1d4ed8;
+            --accent-color: #60a5fa;
+            --light-color: #f8fafc;
+            --dark-color: #1e293b;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --error-color: #ef4444;
+            --border-color: #e2e8f0;
+            --text-muted: #64748b;
+        }
+        
+        body {
+            font-family: 'Atlassian Sans', sans-serif;
+            font-weight: 400;
+            font-style: normal;
+            
+            background-color: #f1f5f9;
+            color: var(--dark-color);
+            margin: 0;
+            padding: 8px;
+            font-size: 13px;
+        }
+        
+        .chat-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 6px;
+            overflow: hidden;
+            background-color: white;
+            height: calc(100vh - 16px);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chat-header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 10px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+        }
+        
+        .chat-header h5 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .database-selector {
+            background-color: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 3px;
+            padding: 3px 6px;
+            font-size: 11px;
+            outline: none;
+        }
+        
+        .database-selector option {
+            color: var(--dark-color);
+            background-color: white;
+        }
+        
+        .conversation-controls {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+        
+        .clear-conversation-btn {
+            background-color: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 3px;
+            padding: 3px 6px;
+            cursor: pointer;
+            font-size: 10px;
+            transition: all 0.2s;
+        }
+        
+        .clear-conversation-btn:hover {
+            background-color: rgba(255, 255, 255, 0.25);
+            transform: translateY(-1px);
+        }
+        
+        .conversation-count {
+            font-size: 10px;
+            opacity: 0.8;
+            color: rgba(255, 255, 255, 0.9);
+        }
+        
+        .chat-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            background-color: #f8fafc;
+        }
+        
+        .message {
+            margin-bottom: 10px;
+            max-width: 80%;
+        }
+        
+        .user-message {
+            margin-left: auto;
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-color) 100%);
+            color: white;
+            border-radius: 10px 10px 3px 10px;
+            padding: 6px 10px;
+            font-size: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .bot-message {
+            margin-right: auto;
+            background-color: white;
+            border-radius: 10px 10px 10px 3px;
+            padding: 10px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+            line-height: 1.3;
+            font-size: 12px;
+        }
+        
+        .bot-message p {
+            margin: 0 0 6px 0;
+        }
+        
+        .bot-message p:last-child {
+            margin-bottom: 0;
+        }
+        
+        .message-time {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 3px;
+            text-align: right;
+        }
+        
+        .chat-footer {
+            padding: 10px 12px;
+            background-color: white;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 6px;
+        }
+        
+        .chat-input {
+            flex: 1;
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 6px 12px;
+            outline: none;
+            transition: all 0.2s;
+            font-size: 12px;
+        }
+        
+        .chat-input:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+        }
+        
+        .send-btn {
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-color) 100%);
+            color: white;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 12px;
+        }
+        
+        .send-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            padding: 6px;
+        }
+        
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(59, 130, 246, 0.1);
+            border-radius: 50%;
+            border-top-color: var(--primary-color);
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Card styles */
+        .card-container {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 8px 0;
+        }
+        
+        .metric-card {
+            flex: 1;
+            min-width: 120px;
+            background: white;
+            border-radius: 6px;
+            padding: 10px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+            border-left: 3px solid var(--accent-color);
+        }
+        
+        .metric-title {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        
+        .metric-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--dark-color);
+        }
+        
+        /* Table styles */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 11px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+        }
+        
+        .data-table th {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 8px;
+            text-align: left;
+            font-size: 11px;
+        }
+        
+        .data-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 11px;
+        }
+        
+        .data-table tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        /* Chart styles */
+        .chart-container {
+            margin: 10px 0;
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+        }
+        
+        .chart-img {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+        
+        /* SQL info */
+        .sql-info {
+            margin-top: 8px;
+            font-size: 10px;
+            color: var(--text-muted);
+            background: #f8f9fa;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            overflow-x: auto;
+        }
+        
+        .toggle-sql {
+            color: var(--primary-color);
+            cursor: pointer;
+            font-size: 10px;
+            margin-top: 4px;
+            display: inline-block;
+        }
+        
+        /* Documentation styles */
+        .documentation-response {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 8px 0;
+        }
+        
+        .documentation-response h4 {
+            margin: 0 0 8px 0;
+            font-size: 13px;
+        }
+        
+        .documentation-list {
+            list-style: none;
+            padding: 0;
+            margin: 8px 0;
+        }
+        
+        .documentation-list li {
+            background: rgba(255, 255, 255, 0.1);
+            margin: 4px 0;
+            padding: 6px 10px;
+            border-radius: 4px;
+            border-left: 2px solid rgba(255, 255, 255, 0.3);
+            font-size: 11px;
+        }
+        
+        .documentation-list li strong {
+            color: #fff;
+        }
+        
+        /* Enhanced text responses */
+        .enhanced-text-response {
+            background: #f8f9fa;
+            border-left: 3px solid var(--accent-color);
+            padding: 10px;
+            border-radius: 4px;
+            margin: 8px 0;
+        }
+        
+        .enhanced-text-response strong {
+            color: var(--primary-color);
+        }
+        
+        /* Diagram styles */
+        .diagram-container {
+            margin: 10px 0;
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+            text-align: center;
+        }
+        
+        .diagram-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 8px;
+        }
+        
+        .diagram-img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+        
+        /* Responsive */
+        @media (max-width:auto ) {
+            .chat-container {
+                height: 100vh;
+                border-radius: 0;
+            }
+            
+            .message {
+                max-width: 85%;
+            }
+            
+            .card-container {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h5 class="mb-0"><i class="bi bi-database"></i> Database Analytics Chat</h5>
+            <div class="conversation-controls">
+                <select id="databaseSelector" class="database-selector">
+                    <option value="">Loading databases...</option>
+                </select>
+                <button class="clear-conversation-btn" onclick="clearConversation()">Clear Conversation</button>
+            </div>
+            <div class="conversation-count">Conversation count: <span id="conversationCount">0</span></div>
+        </div>
+        
+        <div class="chat-body" id="chatBody">
+            <div class="bot-message message">
+                <div>Hello! I'm your database analytics assistant. Ask me anything about your data.</div>
+                <div class="message-time">Just now</div>
+            </div>
+        </div>
+        
+        <div class="loading" id="loading" style="display: none;">
+            <div class="spinner"></div>
+        </div>
+        
+        <div class="chat-footer">
+            <input type="text" class="chat-input" id="userInput" placeholder="Ask about your data..." autocomplete="off">
+            <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                <i class="bi bi-send"></i>
+            </button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global variables
+        let currentDatabase = '';
+        let conversationHistory = [];
+        
+        // Initialize the app
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDatabases();
+            loadConversationHistory();
+            
+            // Set up event listeners
+            document.getElementById('userInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            document.getElementById('databaseSelector').addEventListener('change', function() {
+                currentDatabase = this.value;
+                updateDatabase();
+            });
+        });
+        
+        // Load available databases
+        function loadDatabases() {
+            fetch('/databases')
+                .then(response => response.json())
+                .then(data => {
+                    const selector = document.getElementById('databaseSelector');
+                    selector.innerHTML = '';
+                    
+                    if (data.databases && data.databases.length > 0) {
+                        data.databases.forEach(db => {
+                            const option = document.createElement('option');
+                            option.value = db;
+                            option.textContent = db;
+                            selector.appendChild(option);
+                        });
+                        
+                        // Set the first database as default
+                        if (data.databases.length > 0) {
+                            currentDatabase = data.databases[0];
+                            selector.value = currentDatabase;
+                        }
+                    } else {
+                        const option = document.createElement('option');
+                        option.textContent = 'No databases found';
+                        selector.appendChild(option);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading databases:', error);
+                });
+        }
+        
+        // Load conversation history
+        function loadConversationHistory() {
+            fetch('/conversation_history')
+                .then(response => response.json())
+                .then(data => {
+                    conversationHistory = data.conversation_history || [];
+                    updateConversationCount();
+                    
+                    // Display conversation history
+                    if (conversationHistory.length > 0) {
+                        displayConversationHistory(conversationHistory);
+                    } else {
+                        // Show welcome message if no history
+                        addBotMessage("Hello! I'm your database analytics assistant. Ask me anything about your data.");
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading conversation history:', error);
+                    addBotMessage("Hello! I'm your database analytics assistant. Ask me anything about your data.");
+                });
+        }
+        
+        // Display conversation history
+        function displayConversationHistory(history) {
+            const chatBody = document.getElementById('chatBody');
+            chatBody.innerHTML = '';
+            
+            history.forEach(conv => {
+                // Add user message
+                addUserMessage(conv.question, conv.timestamp);
+                
+                // Add bot response based on type
+                if (conv.response) {
+                    addBotMessage(conv.response, conv.timestamp);
+                }
+                
+                // Add SQL info if available
+                if (conv.sql_query) {
+                    addSqlInfo(conv.sql_query);
+                }
+            });
+        }
+        
+        // Update conversation count
+        function updateConversationCount() {
+            document.getElementById('conversationCount').textContent = conversationHistory.length;
+        }
+        
+        // Update the current database
+        function updateDatabase() {
+            if (!currentDatabase) return;
+            
+            fetch('/set_database', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    database: currentDatabase
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                addBotMessage(`Now analyzing database: <strong>${currentDatabase}</strong>`);
+            })
+            .catch(error => {
+                console.error('Error updating database:', error);
+            });
+        }
+        
+        // Send user message
+        function sendMessage() {
+            const input = document.getElementById('userInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            // Add user message to chat
+            addUserMessage(message);
+            input.value = '';
+            
+            // Show loading indicator
+            document.getElementById('loading').style.display = 'flex';
+            
+            // Scroll to bottom
+            scrollToBottom();
+            
+            // Send to backend
+            fetch('/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    question: message,
+                    database: currentDatabase
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Hide loading indicator
+                document.getElementById('loading').style.display = 'none';
+                
+                // Handle different response types
+                switch(data.type) {
+                    case 'text':
+                        addBotMessage(data.content);
+                        break;
+                        
+                    case 'card':
+                        showCards(data.content);
+                        break;
+                        
+                    case 'table':
+                        showTable(data.content);
+                        break;
+                        
+                    case 'chart':
+                        showChart(data.content, data.chart_type, data.data_preview);
+                        break;
+                        
+                    case 'diagram':
+                        showDiagram(data.content, data.title);
+                        break;
+                        
+                    default:
+                        addBotMessage(data.content || "I couldn't process your request.");
+                }
+                
+                // Add SQL info if available
+                if (data.sql) {
+                    addSqlInfo(data.sql);
+                }
+                
+                // Update conversation count
+                if (data.conversation_count !== undefined) {
+                    conversationHistory.length = data.conversation_count;
+                    updateConversationCount();
+                }
+                
+                // Scroll to bottom
+                scrollToBottom();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('loading').style.display = 'none';
+                addBotMessage("Sorry, there was an error processing your request.");
+                scrollToBottom();
+            });
+        }
+        
+        // Add user message to chat
+        function addUserMessage(message, timestamp = null) {
+            const chatBody = document.getElementById('chatBody');
+            const now = new Date();
+            const timeString = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message user-message';
+            messageDiv.innerHTML = `
+                <div>${message}</div>
+                <div class="message-time">${timeString}</div>
+            `;
+            
+            chatBody.appendChild(messageDiv);
+            scrollToBottom();
+        }
+        
+        // Add bot message to chat
+        function addBotMessage(message, timestamp = null) {
+            const chatBody = document.getElementById('chatBody');
+            const now = new Date();
+            const timeString = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message bot-message';
+            
+            // Check if this is a documentation response
+            const isDocumentation = message.includes('•') || message.includes('tables') || message.includes('columns') || message.includes('database');
+            
+            if (isDocumentation) {
+                // Format as documentation response
+                const formattedMessage = formatDocumentationResponse(message);
+                messageDiv.innerHTML = `
+                    <div class="documentation-response">
+                        ${formattedMessage}
+                    </div>
+                    <div class="message-time">${timeString}</div>
+                `;
+            } else {
+                // Format as enhanced text response
+                const formattedMessage = formatEnhancedTextResponse(message);
+                messageDiv.innerHTML = `
+                    <div class="enhanced-text-response">
+                        ${formattedMessage}
+                    </div>
+                    <div class="message-time">${timeString}</div>
+                `;
+            }
+            
+            chatBody.appendChild(messageDiv);
+            scrollToBottom();
+        }
+        
+        // Format documentation response
+        function formatDocumentationResponse(message) {
+            // Convert markdown-style formatting to HTML
+            let formatted = message
+                // Handle headers (multiple # symbols)
+                .replace(/^#{1,6}\s+(.*$)/gim, '<h3>$1</h3>')
+                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                // Handle bold text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                // Handle italic text
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                // Handle code blocks
+                .replace(/`(.*?)`/g, '<code>$1</code>')
+                // Handle line breaks
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n• /g, '</li><li>')
+                .replace(/^• /, '<li>');
+            
+            // Wrap in proper HTML structure
+            if (formatted.includes('<li>')) {
+                formatted = formatted.replace(/^<li>/, '');
+                formatted = formatted.replace(/<\/li>$/, '');
+                formatted = `<ul class="documentation-list">${formatted}</ul>`;
+            }
+            
+            return `<p>${formatted}</p>`;
+        }
+        
+        // Format enhanced text response
+        function formatEnhancedTextResponse(message) {
+            // Convert markdown-style formatting to HTML
+            let formatted = message
+                // Handle headers (multiple # symbols)
+                .replace(/^#{1,6}\s+(.*$)/gim, '<h3>$1</h3>')
+                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                // Handle bold text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                // Handle italic text
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                // Handle code blocks
+                .replace(/`(.*?)`/g, '<code>$1</code>')
+                // Handle line breaks
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>');
+            
+            return `<p>${formatted}</p>`;
+        }
+        
+        // Show cards for metrics
+        function showCards(cards) {
+            const chatBody = document.getElementById('chatBody');
+            const now = new Date();
+            const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message bot-message';
+            
+            let cardsHtml = '<div class="card-container">';
+            cards.forEach(card => {
+                cardsHtml += `
+                    <div class="metric-card">
+                        <div class="metric-title">${card.title}</div>
+                        <div class="metric-value">${card.value}</div>
+                    </div>
+                `;
+            });
+            cardsHtml += '</div>';
+            
+            messageDiv.innerHTML = `
+                <div>Here are the key metrics:</div>
+                ${cardsHtml}
+                <div class="message-time">${timeString}</div>
+            `;
+            
+            chatBody.appendChild(messageDiv);
+        }
+        
+        // Show data table
+        function showTable(data) {
+            if (!data || data.length === 0) {
+                addBotMessage("No data found.");
+                return;
+            }
+            
+            const chatBody = document.getElementById('chatBody');
+            const now = new Date();
+            const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            // Get column names
+            const columns = Object.keys(data[0]);
+            
+            // Build table HTML
+            let tableHtml = '<table class="data-table"><thead><tr>';
+            columns.forEach(col => {
+                tableHtml += `<th>${col}</th>`;
+            });
+            tableHtml += '</tr></thead><tbody>';
+            
+            // Add rows
+            data.forEach(row => {
+                tableHtml += '<tr>';
+                columns.forEach(col => {
+                    tableHtml += `<td>${row[col] !== null ? row[col] : 'NULL'}</td>`;
+                });
+                tableHtml += '</tr>';
+            });
+            
+            tableHtml += '</tbody></table>';
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message bot-message';
+            messageDiv.innerHTML = `
+                <div>Query results:</div>
+                ${tableHtml}
+                <div class="message-time">${timeString}</div>
+            `;
+            
+            chatBody.appendChild(messageDiv);
+        }
+        
+        // Show chart
+        function showChart(chartData, chartType, dataPreview) {
+            const chatBody = document.getElementById('chatBody');
+            const now = new Date();
+            const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message bot-message';
+            
+            let chartHtml = `
+                <div class="chart-container">
+                    <img class="chart-img" src="data:image/png;base64,${chartData}" alt="Chart">
+                </div>
+            `;
+            
+            messageDiv.innerHTML = `
+                <div>Here's the ${chartType} chart:</div>
+                ${chartHtml}
+                <div class="message-time">${timeString}</div>
+            `;
+            
+            chatBody.appendChild(messageDiv);
+            
+            // Optionally show data preview
+            if (dataPreview && dataPreview.length > 0) {
+                addBotMessage("Data preview: " + JSON.stringify(dataPreview));
+            }
+        }
+        
+        // Show diagram
+        function showDiagram(content, title) {
+            const chatBody = document.getElementById('chatBody');
+            const now = new Date();
+            const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message bot-message';
+            
+            let diagramHtml = `
+                <div class="diagram-container">
+                    <div class="diagram-title">${title}</div>
+                    <img class="diagram-img" src="data:image/png;base64,${content}" alt="${title}">
+                </div>
+            `;
+            
+            messageDiv.innerHTML = `
+                <div>Here's the ${title} diagram:</div>
+                ${diagramHtml}
+                <div class="message-time">${timeString}</div>
+            `;
+            
+            chatBody.appendChild(messageDiv);
+        }
+        
+        // Add SQL information
+        function addSqlInfo(sql) {
+            const chatBody = document.getElementById('chatBody');
+            
+            const sqlDiv = document.createElement('div');
+            sqlDiv.className = 'message bot-message';
+            sqlDiv.innerHTML = `
+                <div class="toggle-sql" onclick="toggleSql(this)">Show SQL <i class="bi bi-chevron-down"></i></div>
+                <div class="sql-info" style="display: none;">${sql}</div>
+            `;
+            
+            chatBody.appendChild(sqlDiv);
+            scrollToBottom();
+        }
+        
+        // Toggle SQL visibility
+        function toggleSql(element) {
+            const sqlInfo = element.nextElementSibling;
+            const icon = element.querySelector('i');
+            
+            if (sqlInfo.style.display === 'none') {
+                sqlInfo.style.display = 'block';
+                icon.className = 'bi bi-chevron-up';
+                element.innerHTML = element.innerHTML.replace('Show', 'Hide');
+            } else {
+                sqlInfo.style.display = 'none';
+                icon.className = 'bi bi-chevron-down';
+                element.innerHTML = element.innerHTML.replace('Hide', 'Show');
+            }
+            
+            scrollToBottom();
+        }
+        
+        // Scroll chat to bottom
+        function scrollToBottom() {
+            const chatBody = document.getElementById('chatBody');
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+        
+        // Clear conversation
+        function clearConversation() {
+            fetch('/clear_conversation', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Clear the chat display
+                const chatBody = document.getElementById('chatBody');
+                chatBody.innerHTML = '';
+                
+                // Reset conversation history
+                conversationHistory = [];
+                updateConversationCount();
+                
+                // Show welcome message
+                addBotMessage("Hello! I'm your database analytics assistant. Ask me anything about your data.");
+            })
+            .catch(error => {
+                console.error('Error clearing conversation:', error);
+                addBotMessage("Sorry, there was an error clearing the conversation.");
+            });
+        }
+    </script>
+</body>
+</html>
