@@ -102,7 +102,7 @@ def init_session():
     if 'conversation_history' not in session:
         session['conversation_history'] = []
 
-def add_to_conversation_history(question, response, sql_query=""):
+def add_to_conversation_history(question, response_obj, sql_query=""):
     """Add a conversation turn to the history"""
     if 'conversation_history' not in session:
         session['conversation_history'] = []
@@ -110,7 +110,7 @@ def add_to_conversation_history(question, response, sql_query=""):
     session['conversation_history'].append({
         'timestamp': datetime.now().isoformat(),
         'question': question,
-        'response': response,
+        'response_obj': response_obj,
         'sql_query': sql_query,
         'database': DB_CONFIG['database']
     })
@@ -132,11 +132,40 @@ def get_conversation_context():
     
     for conv in recent_conversations:
         context += f"User: {conv['question']}\n"
-        if conv['response']:
+        if conv['response_obj']:
             # Truncate long responses
-            response_preview = str(conv['response'])[:200] + "..." if len(str(conv['response'])) > 200 else str(conv['response'])
+            response_preview = str(conv['response_obj'])[:200] + "..." if len(str(conv['response_obj'])) > 200 else str(conv['response_obj'])
             context += f"Assistant: {response_preview}\n"
         context += "---\n"
+    
+    return context
+
+def get_optimized_conversation_context(question):
+    """Get minimal but relevant conversation context"""
+    if 'conversation_history' not in session:
+        return ""
+    
+    history = session['conversation_history']
+    if not history:
+        return ""
+    
+    # Only include context if question seems related to previous ones
+    question_lower = question.lower()
+    context_keywords = ['previous', 'before', 'last', 'earlier', 'that', 'those', 'same']
+    
+    if not any(keyword in question_lower for keyword in context_keywords):
+        return ""
+    
+    # Include only last 2 conversations and only essential info
+    recent = history[-2:]
+    context = "Recent context:\n"
+    for conv in recent:
+        context += f"Q: {conv['question'][:50]}{'...' if len(conv['question']) > 50 else ''}\n"
+        # Include only successful query results summary
+        if conv.get('sql_query') and not conv['response_obj'].startswith('Error'):
+            resp = str(conv['response_obj'])
+            resp_preview = resp[:30] + '...' if len(resp) > 30 else resp
+            context += f"Found: {resp_preview}\n"
     
     return context
 
@@ -156,6 +185,33 @@ def get_sqlalchemy_engine(database=None):
     return create_engine(
         f"mysql+pymysql://{DB_CONFIG['user']}:{password}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{db_name}"
     )
+
+def get_smart_sample_data(table_name, engine, max_rows=2):
+    """Get representative sample data with intelligent selection"""
+    try:
+        # Get total row count
+        count_query = f"SELECT COUNT(*) as total FROM `{table_name}`"
+        total_rows = pd.read_sql(text(count_query), engine).iloc[0]['total']
+        
+        if total_rows == 0:
+            return []
+        
+        # For small tables, get all data
+        if total_rows <= max_rows:
+            query = f"SELECT * FROM `{table_name}`"
+        else:
+            # Get diverse sample: first row, last row, and middle rows
+            query = f"""
+            (SELECT * FROM `{table_name}` ORDER BY 1 LIMIT 1)
+            UNION ALL
+            (SELECT * FROM `{table_name}` ORDER BY 1 DESC LIMIT 1)
+            LIMIT {max_rows}
+            """
+        
+        result = pd.read_sql(text(query), engine)
+        return result.to_dict('records')
+    except:
+        return []
 
 def get_database_schema(database=None):
     """Get complete schema with table relationships and sample data, with Redis caching"""
@@ -210,12 +266,10 @@ def get_database_schema(database=None):
             # Get foreign keys
             fks = inspector.get_foreign_keys(table)
             
-            # Get sample data (first 3 rows)
+            # Get sample data (use smart sampling)
             sample_data = []
             try:
-                with engine.connect() as conn:
-                    result = conn.execute(text(f"SELECT * FROM `{table}` LIMIT 3"))
-                    sample_data = [dict(row._mapping) for row in result] 
+                sample_data = get_smart_sample_data(table, engine, max_rows=2)
             except Exception as e:
                 print(f"Error getting sample data for {table}: {e}")
             
@@ -253,6 +307,61 @@ def get_database_schema(database=None):
         logging.error(f"Error getting schema: {e}")
         return None
 
+def get_relevant_schema(question, database=None):
+    """Get only relevant parts of schema based on question, using business_terms.json for keyword mapping"""
+    full_schema = get_database_schema(database)
+    if not full_schema:
+        return None
+
+    # Load business terms mapping
+    business_terms_path = os.path.join(os.path.dirname(__file__), 'business_terms.json')
+    try:
+        with open(business_terms_path, 'r', encoding='utf-8') as f:
+            business_terms = json.load(f)
+    except Exception as e:
+        business_terms = {}
+
+    # Build reverse mapping: keyword -> [table_name]
+    keyword_to_tables = {}
+    for k, v in business_terms.items():
+        # Use both the key and value as possible keywords
+        keyword_to_tables.setdefault(k.lower(), set()).add(v)
+        keyword_to_tables.setdefault(v.lower(), set()).add(v)
+        # Also split key by underscores for more granular keywords
+        for part in k.lower().split('_'):
+            if part and part != v.lower():
+                keyword_to_tables.setdefault(part, set()).add(v)
+
+    # Extract potential table names from question
+    question_lower = question.lower()
+    relevant_tables = set()
+
+    # Check for explicit table mentions (by table name)
+    for table_name in full_schema['tables']:
+        if table_name.lower() in question_lower:
+            relevant_tables.add(table_name)
+
+    # If no specific tables mentioned, use business_terms keyword mapping
+    if not relevant_tables:
+        for keyword, tables in keyword_to_tables.items():
+            if keyword in question_lower:
+                relevant_tables.update(t for t in tables if t in full_schema['tables'])
+
+    # If still no matches, include most commonly used tables (from business_terms values)
+    if not relevant_tables:
+        # Use the most common business terms as fallback
+        common_tables = ['employees', 'products', 'sales', 'payments', 'users', 'accounts']
+        relevant_tables = set(t for t in common_tables if t in full_schema['tables'])
+
+    # Build filtered schema
+    filtered_schema = {
+        'tables': {t: full_schema['tables'][t] for t in relevant_tables if t in full_schema['tables']},
+        'relationships': [r for r in full_schema['relationships'] 
+                        if r['source_table'] in relevant_tables or r['target_table'] in relevant_tables]
+    }
+
+    return filtered_schema
+
 def extract_relevant_tables_columns(question, schema_info):
     """Extract relevant tables and columns from the question using simple keyword matching."""
     q = question.lower()
@@ -278,54 +387,42 @@ def generate_sql_token_optimized(question, database=None, error_context=None):
         return None
     conversation_context = get_conversation_context()
     relevant_tables, relevant_columns = extract_relevant_tables_columns(question, schema_info)
-    schema_prompt = "Database Schema (Relevant Tables):\n"
-    for table_name in relevant_tables:
-        table_info = schema_info['tables'][table_name]
-        schema_prompt += f"\nTable: {table_name}\n"
-        schema_prompt += "Columns:\n"
-        for col in table_info['columns']:
-            if not relevant_columns[table_name] or col['name'] in relevant_columns[table_name]:
-                schema_prompt += f"- {col['name']} ({col['type']})"
-                if col['primary_key']:
-                    schema_prompt += " [PRIMARY KEY]"
-                schema_prompt += "\n"
-        if table_info['primary_key']:
-            schema_prompt += f"Primary Key: {', '.join(table_info['primary_key'])}\n"
-        if table_info['foreign_keys']:
-            schema_prompt += "Foreign Keys:\n"
-            for fk in table_info['foreign_keys']:
-                schema_prompt += f"- {fk['constrained_columns'][0]} → {fk['referred_table']}.{fk['referred_columns'][0]}\n"
-        if table_info['sample_data']:
-            schema_prompt += "Sample Data:\n"
-            for row in table_info['sample_data'][:2]:
-                schema_prompt += str(row) + "\n"
-    # Add relationships for relevant tables
-    if schema_info['relationships']:
-        rels = [rel for rel in schema_info['relationships'] if rel['source_table'] in relevant_tables or rel['target_table'] in relevant_tables]
-        if rels:
-            schema_prompt += "\nTable Relationships:\n"
-            for rel in rels:
-                schema_prompt += f"{rel['source_table']}.{rel['source_column']} → {rel['target_table']}.{rel['target_column']}\n"
-    context_prompt = f"\n{conversation_context}\n" if conversation_context else ""
-    error_feedback_prompt = f"\nThe previously generated query failed with the error: \"{error_context}\".\n" if error_context else ""
-    prompt = f"""
-    You are an expert SQL analyst with deep knowledge of this database schema:
-    {schema_prompt}
-    {context_prompt}
-    {error_feedback_prompt}
-    For the following question: \"{question}\"
-    Generate the most appropriate SQL query following these rules:
-    1. Use only the tables and columns that exist in the schema
-    2. Prefer JOINs over subqueries when possible
-    3. Include all necessary WHERE clauses to answer the question
-    4. For aggregate questions, include appropriate GROUP BY
-    5. For time series data, use appropriate date functions
-    6. If this is a follow-up question, consider the context from previous queries
-    7. Return ONLY the SQL query, no explanations or markdown
-    If the question cannot be answered with the available schema, return: 
-    --ERROR: Question cannot be answered with available data
-    SQL Query:
-    """
+    # Try to use domain-specific prompt
+    try:
+        domain_prompt = generate_domain_specific_prompt(question, schema_info)
+        if conversation_context:
+            domain_prompt += f"\n{conversation_context}\n"
+        if error_context:
+            domain_prompt += f"\nThe previously generated query failed with the error: \"{error_context}\".\n"
+        prompt = domain_prompt
+    except Exception as e:
+        # Fallback to original prompt if domain-specific fails
+        schema_prompt = "Schema (compact format):\n"
+        compact_schema = format_compact_schema({
+            "tables": {t: schema_info['tables'][t] for t in relevant_tables if t in schema_info['tables']},
+            "relationships": [r for r in schema_info['relationships'] if r['source_table'] in relevant_tables or r['target_table'] in relevant_tables]
+        })
+        schema_prompt += compact_schema
+        context_prompt = f"\n{conversation_context}\n" if conversation_context else ""
+        error_feedback_prompt = f"\nThe previously generated query failed with the error: \"{error_context}\".\n" if error_context else ""
+        prompt = f"""
+        You are an expert SQL analyst with deep knowledge of this database schema:
+        {schema_prompt}
+        {context_prompt}
+        {error_feedback_prompt}
+        For the following question: \"{question}\"
+        Generate the most appropriate SQL query following these rules:
+        1. Use only the tables and columns that exist in the schema
+        2. Prefer JOINs over subqueries when possible
+        3. Include all necessary WHERE clauses to answer the question
+        4. For aggregate questions, include appropriate GROUP BY
+        5. For time series data, use appropriate date functions
+        6. If this is a follow-up question, consider the context from previous queries
+        7. Return ONLY the SQL query, no explanations or markdown
+        If the question cannot be answered with the available schema, return: 
+        --ERROR: Question cannot be answered with available data
+        SQL Query:
+        """
     # --- LLM Result Caching ---
     llm_cache_key = f"llm_sql_{hash(question + json.dumps(list(relevant_tables)))}_{database or 'default'}"
     cached_sql = redis_get(llm_cache_key)
@@ -881,6 +978,181 @@ def generate_table_schema_diagram(table_name, database=None):
         plt.close()
         return None
 
+def format_compact_schema(schema_info):
+    """Format schema in compact, token-efficient way"""
+    compact = []
+    
+    for table_name, table_info in schema_info['tables'].items():
+        # Compact column representation
+        cols = []
+        for col in table_info['columns']:
+            col_str = f"{col['name']}({col['type'][:10]})"  # Truncate type
+            if col['primary_key']:
+                col_str += "*PK"
+            if not col['nullable']:
+                col_str += "!NULL"
+            cols.append(col_str)
+        
+        # Add foreign keys inline
+        fks = []
+        for fk in table_info['foreign_keys']:
+            fks.append(f"{fk['constrained_columns'][0]}→{fk['referred_table']}")
+        
+        table_compact = f"{table_name}[{','.join(cols)}]"
+        if fks:
+            table_compact += f"FK:{','.join(fks)}"
+        
+        compact.append(table_compact)
+    
+    return "\n".join(compact)
+
+def identify_business_domain(schema_info):
+    """Identify business domain from schema_info (simple heuristic)"""
+    # Heuristic: look for key tables
+    tables = set(schema_info.get('tables', {}).keys())
+    if any(t.startswith('hr_') or t in ['employees', 'attendance_records', 'leave_requests'] for t in tables):
+        return 'hr'
+    if any(t.startswith('inv_') or t in ['products', 'sales', 'stock_levels'] for t in tables):
+        return 'inventory'
+    if any(t.startswith('core_fin_') or t in ['accounts', 'transactions', 'payments'] for t in tables):
+        return 'financial'
+    return 'general'
+
+def generate_domain_specific_prompt(question, schema_info, domain_context=None):
+    """Generate prompts optimized for specific business domains"""
+    
+    # Identify domain from schema
+    domain = identify_business_domain(schema_info)
+    
+    domain_prompts = {
+        'hr': {
+            'context': "This is an HR management system. Focus on employee, attendance, leave, and payroll data.",
+            'common_patterns': [
+                "For attendance queries, join employees with attendance_records",
+                "For leave queries, use leave_requests and leave_types",
+                "Employee data is in employees table, personal info in persons"
+            ]
+        },
+        'inventory': {
+            'context': "This is an inventory management system. Focus on products, sales, purchases, and stock.",
+            'common_patterns': [
+                "For stock queries, use product_stock_levels",
+                "For sales analysis, join sales with sales_items",
+                "Product info is in products table with categories and brands"
+            ]
+        },
+        'financial': {
+            'context': "This is a financial management system. Focus on accounts, transactions, and payments.",
+            'common_patterns': [
+                "For payment queries, use payments and transactions tables",
+                "Account balances are in accounts table",
+                "Transaction categories help classify financial data"
+            ]
+        }
+    }
+    
+    domain_info = domain_prompts.get(domain, {})
+    
+    base_prompt = f"""
+    You are an expert SQL analyst for a {domain} system.
+    
+    {domain_info.get('context', '')}
+    
+    Schema (compact format):
+    {format_compact_schema(schema_info)}
+    
+    Common patterns for this domain:
+    {chr(10).join(domain_info.get('common_patterns', []))}
+    
+    Question: \"{question}\"
+    
+    Generate efficient SQL following these rules:
+    1. Use only existing tables/columns from schema
+    2. Prefer JOINs over subqueries
+    3. Include appropriate WHERE clauses
+    4. Use domain-specific logic (e.g., active employees, valid stock levels)
+    5. Return only the SQL query
+    
+    SQL:
+    """
+    
+    return base_prompt
+
+def generate_sql(question, schema, database, error_context=None):
+    """Placeholder for SQL generation logic. Returns None."""
+    # TODO: Integrate with your LLM or SQL generation logic
+    return None
+
+def generate_conservative_sql(question, database):
+    """Placeholder for conservative SQL generation. Returns None."""
+    # TODO: Implement a conservative SQL generation strategy
+    return None
+
+def execute_query_with_recovery(question, database=None, max_retries=3):
+    """Execute query with intelligent error recovery"""
+    last_error = None
+    for attempt in range(max_retries):
+        if attempt == 0:
+            # First attempt: use filtered schema
+            schema = get_relevant_schema(question, database)
+            # TODO: Replace with your actual SQL generation function
+            sql = generate_sql(question, schema, database)
+        elif attempt == 1:
+            # Second attempt: use full schema with error context
+            schema = get_database_schema(database)
+            sql = generate_sql(question, schema, database, error_context=last_error)
+        else:
+            # Final attempt: use conservative approach
+            # TODO: Replace with your actual conservative SQL generation function
+            sql = generate_conservative_sql(question, database)
+        
+        if not sql:
+            continue
+        
+        df, error = execute_query(sql, database)
+        
+        if df is not None:
+            return df, sql, None
+        
+        last_error = str(error)
+        
+        # Specific error handling
+        if "1054" in last_error or "no such column" in last_error.lower():
+            # Schema mismatch - will retry with different schema
+            continue
+        elif "syntax error" in last_error.lower():
+            # Syntax error - try conservative approach
+            continue
+        else:
+            # Other errors - return immediately
+            return None, sql, error
+    
+    return None, sql, last_error
+
+def validate_and_sanitize_results(df, question):
+    """Validate and sanitize query results"""
+    if df is None or df.empty:
+        return df, "No results found"
+    
+    # Check for reasonable result size
+    if len(df) > 10000:
+        return df.head(1000), f"Results truncated to 1000 rows (original: {len(df)})"
+    
+    # Sanitize sensitive data
+    sensitive_columns = ['password', 'secret', 'token', 'key']
+    for col in df.columns:
+        if any(sens in col.lower() for sens in sensitive_columns):
+            df[col] = '[REDACTED]'
+    
+    # Handle data types for JSON serialization
+    for col in df.columns:
+        if df[col].dtype == 'datetime64[ns]':
+            df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+        elif df[col].dtype == 'object':
+            df[col] = df[col].astype(str)
+    
+    return df, "Success"
+
 @app.before_request
 def before_request():
     g.start_time = time.time()
@@ -1015,7 +1287,11 @@ def chat():
                 if response_type == "card":
                     content = format_card_response(df)
                     if content:
-                        add_to_conversation_history(question, f"Key metrics: {[card['title'] for card in content]}", sql or "")
+                        add_to_conversation_history(question, {
+                            "type": "card",
+                            "content": content,
+                            "sql": sql or ""
+                        }, sql or "")
                         return jsonify({
                             "type": "card", "content": content, "sql": sql,
                             "conversation_count": len(session.get('conversation_history', []))
@@ -1024,7 +1300,13 @@ def chat():
                 elif response_type in ("bar", "line", "pie", "scatter"):
                     chart = generate_visualization(df, response_type)
                     if chart:
-                        add_to_conversation_history(question, f"Generated {response_type} chart", sql or "")
+                        add_to_conversation_history(question, {
+                            "type": response_type,
+                            "content": chart,
+                            "chart_type": response_type,
+                            "data_preview": df.head(5).to_dict(orient='records'),
+                            "sql": sql or ""
+                        }, sql or "")
                         return jsonify({
                             "type": "chart", "chart_type": response_type, "content": chart, "sql": sql,
                             "data_preview": df.head(5).to_dict(orient='records'),
@@ -1041,14 +1323,22 @@ def chat():
                     else:
                         content = format_text_response(df, question)
 
-                    add_to_conversation_history(question, content, sql or "")
+                    add_to_conversation_history(question, {
+                        "type": "text",
+                        "content": content,
+                        "sql": sql or ""
+                    }, sql or "")
                     return jsonify({
                         "type": "text", "content": content, "sql": sql,
                         "conversation_count": len(session.get('conversation_history', []))
                     })
 
                 # Default to table for other cases
-                add_to_conversation_history(question, "Query results in table format", sql or "")
+                add_to_conversation_history(question, {
+                    "type": "table",
+                    "content": df.to_dict(orient='records'),
+                    "sql": sql or ""
+                }, sql or "")
                 return jsonify({
                     "type": "table",
                     "content": df.to_dict(orient='records'),

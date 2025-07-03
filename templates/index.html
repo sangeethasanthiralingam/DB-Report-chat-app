@@ -84,17 +84,40 @@
             chatBody.innerHTML = '';
 
             history.forEach(conv => {
-                // Add user message
                 addUserMessage(conv.question, conv.timestamp);
 
-                // Add bot response based on type
-                if (conv.response) {
+                if (conv.response_obj) {
+                    const resp = conv.response_obj;
+                    switch (resp.type) {
+                        case 'text':
+                            addBotMessage(resp.content, conv.timestamp);
+                            break;
+                        case 'card':
+                            showCards(resp.content);
+                            break;
+                        case 'table':
+                            showTable(resp.content);
+                            break;
+                        case 'chart':
+                            showChart(resp.content, resp.chart_type, resp.data_preview);
+                            break;
+                        case 'diagram':
+                            showDiagram(resp.content, resp.title);
+                            break;
+                        default:
+                            addBotMessage(resp.content || "I couldn't process your request.", conv.timestamp);
+                    }
+                    if (resp.sql) {
+                        addSqlInfo(resp.sql);
+                    } else if (conv.sql_query) {
+                        addSqlInfo(conv.sql_query);
+                    }
+                } else if (conv.response) {
+                    // fallback for old history
                     addBotMessage(conv.response, conv.timestamp);
-                }
-
-                // Add SQL info if available
-                if (conv.sql_query) {
-                    addSqlInfo(conv.sql_query);
+                    if (conv.sql_query) {
+                        addSqlInfo(conv.sql_query);
+                    }
                 }
             });
         }
