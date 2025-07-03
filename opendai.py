@@ -23,6 +23,7 @@ import hashlib
 import inspect
 import re
 from collections import defaultdict
+import uuid
 
 load_dotenv()
 # Configure logging
@@ -49,7 +50,7 @@ DB_CONFIG = {
 
 # Redis connection (add to top-level, after loading .env)
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-redis_client = None
+# redis_client = None
 try:
     redis_client = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
     redis_client.ping()
@@ -530,7 +531,7 @@ def execute_query(sql, database=None):
         return None, e
 
 def generate_visualization(df, chart_type):
-    """Generate different types of visualizations"""
+    logging.info(f"generate_visualization called with chart_type={chart_type}, df shape={df.shape}")
     start_time = time.time()
     plt.figure(figsize=(10, 5))
     # Use a valid style, fallback if not available
@@ -540,6 +541,10 @@ def generate_visualization(df, chart_type):
         plt.style.use('ggplot')
     
     try:
+        if df is None or df.empty:
+            logging.warning("generate_visualization: DataFrame is empty, skipping chart generation.")
+            return None
+        
         if chart_type == "bar":
             if len(df.columns) >= 2:
                 x_col = df.columns[0]
@@ -583,8 +588,9 @@ def generate_visualization(df, chart_type):
         plt.savefig(buf, format='png', dpi=120)
         plt.close()
         img_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-        logging.info(f"Chart '{chart_type}' generated in {time.time() - start_time:.4f} seconds.")
-        return img_base64
+        rel_path = save_base64_image_to_file(img_base64, prefix=chart_type)
+        logging.info(f"Chart '{chart_type}' generated and saved at {rel_path} in {time.time() - start_time:.4f} seconds.")
+        return rel_path
     
     except Exception as e:
         logging.error(f"Error generating chart: {e}")
@@ -867,8 +873,9 @@ def generate_relationship_diagram(database=None):
         plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
         plt.close()
         img_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-        logging.info(f"Relationship diagram generated in {time.time() - start_time:.4f} seconds.")
-        return img_base64
+        rel_path = save_base64_image_to_file(img_base64, prefix='relationship')
+        logging.info(f"Relationship diagram generated and saved at {rel_path} in {time.time() - start_time:.4f} seconds.")
+        return rel_path
         
     except Exception as e:
         logging.error(f"Error generating relationship diagram: {e}")
@@ -951,8 +958,9 @@ def generate_table_schema_diagram(table_name, database=None):
         plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
         plt.close()
         img_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-        logging.info(f"Table schema diagram for '{table_name}' generated in {time.time() - start_time:.4f} seconds.")
-        return img_base64
+        rel_path = save_base64_image_to_file(img_base64, prefix=f'schema_{table_name}')
+        logging.info(f"Table schema diagram for '{table_name}' generated and saved at {rel_path} in {time.time() - start_time:.4f} seconds.")
+        return rel_path
         
     except Exception as e:
         logging.error(f"Error generating table schema diagram: {e}")
@@ -1118,6 +1126,13 @@ def validate_and_sanitize_results(df, question):
     
     return df, "Success"
 
+def sanitize_dataframe_for_json(df):
+    # Convert NaT to None for all columns
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            df[col] = df[col].astype(object).where(df[col].notnull(), None)
+    return df
+
 @app.before_request
 def before_request():
     g.start_time = time.time()
@@ -1221,26 +1236,19 @@ def chat():
             df, err = execute_query(sql, DB_CONFIG['database'])
 
             if err:
-                error_message = str(err)
-                # MySQL error code 1054 is for "Unknown column"
-                if "1054" in error_message or "no such column" in error_message.lower():
-                    logging.warning(f"SQL query failed with a schema error. Retrying generation. Error: {error_message}")
-                    sql = generate_sql_token_optimized(question, DB_CONFIG['database'], error_context=error_message)
-                    if sql:
-                        df, err = execute_query(sql, DB_CONFIG['database'])
-            
-            # If there's still an error after the potential retry, show it
-            if err:
-                error_msg = f"There was an error executing the query. The database returned: '{str(err)}'"
-                add_to_conversation_history(question, error_msg, sql or "")
+                # Log the real error for debugging
+                logging.error(f"SQL execution error: {err}")
+                user_msg = "Sorry, I couldn't answer your question due to a database issue. Please try rephrasing your request or ask about something else."
+                add_to_conversation_history(question, user_msg, sql or "")
                 return jsonify({
                     "type": "text",
-                    "content": error_msg,
-                    "sql": sql,
+                    "content": user_msg,
+                    "sql": "",  # Don't show the SQL for errors
                     "conversation_count": len(session.get('conversation_history', []))
                 })
 
             if df is not None:
+                df = sanitize_dataframe_for_json(df)
                 # This block runs if the query was successful (either first try or retry)
                 # Step 3: Determine response type
                 if "pie chart" in q_lower: response_type = "pie"
@@ -1396,12 +1404,12 @@ def chat():
 
     except Exception as e:
         logging.error(f"Error in chat endpoint: {e}")
-        error_msg = f"An error occurred: {str(e)}"
+        user_msg = "Sorry, something went wrong while processing your request. Please try again or rephrase your question."
         question_text = locals().get('question', 'N/A')
-        add_to_conversation_history(question_text, error_msg, "")
+        add_to_conversation_history(question_text, user_msg, "")
         return jsonify({
             "type": "text",
-            "content": error_msg,
+            "content": user_msg,
             "sql": "",
             "conversation_count": len(session.get('conversation_history', []))
         }), 500
@@ -1449,13 +1457,16 @@ def batch_chat():
                 if err:
                     responses.append({"type": "text", "content": f"Error: {str(err)}", "sql": sql})
                 elif df is not None:
-                    response_type = determine_response_type(q, df.head(2).to_dict())
+                    df = sanitize_dataframe_for_json(df)
+                    df_head2 = sanitize_dataframe_for_json(df.head(2))
+                    df_head5 = sanitize_dataframe_for_json(df.head(5))
+                    response_type = determine_response_type(q, df_head2.to_dict())
                     if response_type == "card":
                         content = format_card_response(df)
                         responses.append({"type": "card", "content": content, "sql": sql})
                     elif response_type in ("bar", "line", "pie", "scatter"):
                         chart = generate_visualization(df, response_type)
-                        responses.append({"type": "chart", "chart_type": response_type, "content": chart, "sql": sql, "data_preview": df.head(5).to_dict(orient='records')})
+                        responses.append({"type": "chart", "chart_type": response_type, "content": chart, "sql": sql, "data_preview": df_head5.to_dict(orient='records')})
                     elif response_type == "text":
                         content = format_text_response(df, q)
                         responses.append({"type": "text", "content": content, "sql": sql})
@@ -1469,6 +1480,25 @@ def batch_chat():
     except Exception as e:
         logging.error(f"Error in batch_chat endpoint: {e}")
         return jsonify({"error": str(e)}), 500
+
+STATIC_GENERATED_DIR = os.path.join(os.path.dirname(__file__), 'static', 'generated')
+os.makedirs(STATIC_GENERATED_DIR, exist_ok=True)
+
+def save_base64_image_to_file(img_base64, prefix='chart'):
+    try:
+        img_bytes = base64.b64decode(img_base64)
+        filename = f"{prefix}_{uuid.uuid4().hex}.png"
+        file_path = os.path.join(STATIC_GENERATED_DIR, filename)
+        os.makedirs(STATIC_GENERATED_DIR, exist_ok=True)
+        with open(file_path, 'wb') as f:
+            f.write(img_bytes)
+        rel_path = f"generated/{filename}"
+        url_path = f"/static/{rel_path}"
+        logging.info(f"Saved image to {file_path}, accessible at {url_path}")
+        return rel_path
+    except Exception as e:
+        logging.error(f"Failed to save image: {e}")
+        return None
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
