@@ -17,7 +17,9 @@ from flask_session import Session
 import networkx as nx
 import time
 import logging
+from dotenv import load_dotenv
 
+load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -31,13 +33,13 @@ Session(app)
 # Configure OpenAI
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# MySQL DB config
+# MySQL DB config - Single database only
 DB_CONFIG = {
-    "host": "127.0.0.1",
-    "port": 3306,
-    "user": "root",
-    "password": "root@1234",
-    "database": "job_portal"  # Default database, can be changed
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": os.getenv("DB_PORT", 3306),
+    "user": os.getenv("DB_USER", "root"),
+    "password": os.getenv("DB_PASSWORD", "root"),
+    "database": os.getenv("DB_NAME", "db") 
 }
 
 # Cache for database schema and metadata
@@ -49,8 +51,6 @@ def init_session():
     """Initialize session with conversation history"""
     if 'conversation_history' not in session:
         session['conversation_history'] = []
-    if 'current_database' not in session:
-        session['current_database'] = DB_CONFIG['database']
 
 def add_to_conversation_history(question, response, sql_query=""):
     """Add a conversation turn to the history"""
@@ -62,7 +62,7 @@ def add_to_conversation_history(question, response, sql_query=""):
         'question': question,
         'response': response,
         'sql_query': sql_query,
-        'database': session.get('current_database', DB_CONFIG['database'])
+        'database': DB_CONFIG['database']
     })
     
     # Keep only last 10 conversations to prevent session bloat
@@ -156,7 +156,7 @@ def get_database_schema(database=None):
             try:
                 with engine.connect() as conn:
                     result = conn.execute(text(f"SELECT * FROM `{table}` LIMIT 3"))
-                    sample_data = [dict(row._mapping) for row in result]  # Updated for SQLAlchemy 2.0 compatibility
+                    sample_data = [dict(row._mapping) for row in result] 
             except Exception as e:
                 print(f"Error getting sample data for {table}: {e}")
             
@@ -812,31 +812,7 @@ def home():
     init_session()
     return render_template('index.html')
 
-@app.route('/databases', methods=['GET'])
-def list_databases():
-    try:
-        engine = get_sqlalchemy_engine()
-        with engine.connect() as conn:
-            result = conn.execute(text("SHOW DATABASES"))
-            databases = [row[0] for row in result if row[0] not in ('information_schema', 'mysql', 'performance_schema', 'sys')]
-            return jsonify({"databases": databases})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
-@app.route('/set_database', methods=['POST'])
-def set_database():
-    data = request.json
-    if not data or 'database' not in data:
-        return jsonify({"error": "Database name required"}), 400
-    
-    session['current_database'] = data['database']
-    DB_CONFIG['database'] = data['database']
-    # Clear schema cache for the new database
-    cache_key = f"schema_{data['database']}"
-    if cache_key in DB_METADATA_CACHE:
-        del DB_METADATA_CACHE[cache_key]
-    
-    return jsonify({"message": f"Database changed to {data['database']}"})
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -849,7 +825,6 @@ def chat():
             return jsonify({"error": "Invalid request data"}), 400
             
         question = data.get('question', '').strip()
-        database = data.get('database', session.get('current_database', DB_CONFIG['database']))
 
         if not question:
             return jsonify({"error": "Question is required"}), 400
@@ -866,23 +841,18 @@ def chat():
                 "conversation_count": len(session.get('conversation_history', []))
             })
 
-        # Update session database if provided
-        if database != session.get('current_database'):
-            session['current_database'] = database
-            DB_CONFIG['database'] = database
-
         q_lower = question.lower()
-        logging.info(f"Received question: '{question}' for database '{database}'")
+        logging.info(f"Received question: '{question}' for database '{DB_CONFIG['database']}'")
         
         # Handle relationship diagram requests
         if 'relationship' in q_lower and ('diagram' in q_lower or 'draw' in q_lower or 'picture' in q_lower):
-            diagram = generate_relationship_diagram(database)
+            diagram = generate_relationship_diagram(DB_CONFIG['database'])
             if diagram:
                 add_to_conversation_history(question, "Generated database relationship diagram", "")
                 return jsonify({
                     "type": "diagram",
                     "content": diagram,
-                    "title": f"Database Relationships - {database}",
+                    "title": f"Database Relationships - {DB_CONFIG['database']}",
                     "sql": "",
                     "conversation_count": len(session.get('conversation_history', []))
                 })
@@ -898,11 +868,11 @@ def chat():
         
         # Handle table schema diagram requests
         if 'table' in q_lower and ('diagram' in q_lower or 'draw' in q_lower or 'picture' in q_lower or 'schema' in q_lower):
-            schema_info = get_database_schema(database)
+            schema_info = get_database_schema(DB_CONFIG['database'])
             if schema_info:
                 for table_name in schema_info['tables']:
                     if table_name.lower() in q_lower:
-                        diagram = generate_table_schema_diagram(table_name, database)
+                        diagram = generate_table_schema_diagram(table_name, DB_CONFIG['database'])
                         if diagram:
                             add_to_conversation_history(question, f"Generated schema diagram for {table_name}", "")
                             return jsonify({
@@ -924,20 +894,20 @@ def chat():
                 })
 
         # Step 1: Generate SQL
-        sql = generate_sql(question, database)
+        sql = generate_sql(question, DB_CONFIG['database'])
 
         if sql:
             # Step 2: Execute query and handle errors with a retry
-            df, err = execute_query(sql, database)
+            df, err = execute_query(sql, DB_CONFIG['database'])
 
             if err:
                 error_message = str(err)
                 # MySQL error code 1054 is for "Unknown column"
                 if "1054" in error_message or "no such column" in error_message.lower():
                     logging.warning(f"SQL query failed with a schema error. Retrying generation. Error: {error_message}")
-                    sql = generate_sql(question, database, error_context=error_message)
+                    sql = generate_sql(question, DB_CONFIG['database'], error_context=error_message)
                     if sql:
-                        df, err = execute_query(sql, database)
+                        df, err = execute_query(sql, DB_CONFIG['database'])
             
             # If there's still an error after the potential retry, show it
             if err:
@@ -1011,7 +981,7 @@ def chat():
             ])
             
             if "detailed documentation" in q_lower or "full documentation" in q_lower:
-                content = handle_full_documentation_request(database)
+                content = handle_full_documentation_request(DB_CONFIG['database'])
                 add_to_conversation_history(question, "Generated full documentation.", "")
                 return jsonify({
                     "type": "text", "content": content, "sql": "",
@@ -1019,7 +989,7 @@ def chat():
                 })
 
             if is_doc_keyword:
-                content = handle_documentation_query(question, database)
+                content = handle_documentation_query(question, DB_CONFIG['database'])
                 add_to_conversation_history(question, content, "")
                 return jsonify({
                     "type": "text", "content": content, "sql": "",
@@ -1028,12 +998,12 @@ def chat():
 
             # Fallback to conversational LLM
             start_time = time.time()
-            schema_info = get_database_schema(database)
+            schema_info = get_database_schema(DB_CONFIG['database'])
             conversation_context = get_conversation_context()
             
             schema_overview = ""
             if schema_info:
-                schema_overview += f"Database name: {database}\n"
+                schema_overview += f"Database name: {DB_CONFIG['database']}\n"
                 schema_overview += "Tables:\n"
                 for t in schema_info['tables']:
                     schema_overview += f"- {t}\n"
@@ -1101,7 +1071,7 @@ def get_conversation_history():
     init_session()
     return jsonify({
         "conversation_history": session.get('conversation_history', []),
-        "current_database": session.get('current_database', DB_CONFIG['database'])
+        "current_database": DB_CONFIG['database']
     })
 
 @app.route('/clear_conversation', methods=['POST'])
