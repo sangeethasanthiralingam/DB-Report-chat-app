@@ -27,7 +27,7 @@
     "core_notes": "notes",
     "core_org_levels": "org_levels",
     "core_organization_hierarchies": "organization_hierarchies",
-    "core_parties": "parties",
+    "core_parties": "customers/suppliers",
     "core_payments_card": "payments_card",
     "core_persons": "persons",
     "core_processes": "processes",
@@ -149,5 +149,11 @@
     "report_dashboard_tiles": "dashboard_tiles",
     "report_dashboards": "dashboards",
     "report_types": "report_types",
-    "reports": "reports"
+    "reports": "reports",
+    "customer": "core_parties",
+    "party": "core_parties",
+    "person": "core_persons",
+    "customer_name": "core_persons.display_name",
+    "party_name": "core_persons.display_name",
+    "display_name": "core_persons.display_name"
 } 

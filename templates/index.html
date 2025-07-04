@@ -104,9 +104,6 @@
                         case 'line':
                         case 'scatter':
                             showChart(resp.content, resp.chart_type || resp.type, resp.data_preview);
-                            if (resp.data_preview && resp.data_preview.length > 0) {
-                                addBotMessage("Data preview: " + JSON.stringify(resp.data_preview));
-                            }
                             break;
                         case 'diagram':
                             showDiagram(resp.content, resp.title);

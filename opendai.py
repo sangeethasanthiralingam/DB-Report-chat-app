@@ -50,7 +50,7 @@ DB_CONFIG = {
 
 # Redis connection (add to top-level, after loading .env)
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-# redis_client = None
+redis_client = None
 try:
     redis_client = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
     redis_client.ping()
@@ -122,15 +122,23 @@ def add_to_conversation_history(question, response_obj, sql_query=""):
     
     session.modified = True
 
-def get_conversation_context(limit=1, truncate=100):
+def get_conversation_context():
+    """Get recent conversation context for LLM"""
     if 'conversation_history' not in session or not session['conversation_history']:
         return ""
-    recent_conversations = session['conversation_history'][-limit:]
+    
+    # Get last 3 conversations for context
+    recent_conversations = session['conversation_history'][-3:]
     context = "Recent conversation history:\n"
+    
     for conv in recent_conversations:
-        q = conv['question'][:truncate] + ("..." if len(conv['question']) > truncate else "")
-        resp = str(conv['response_obj'])[:truncate] + ("..." if len(str(conv['response_obj'])) > truncate else "")
-        context += f"User: {q}\nAssistant: {resp}\n---\n"
+        context += f"User: {conv['question']}\n"
+        if conv['response_obj']:
+            # Truncate long responses
+            response_preview = str(conv['response_obj'])[:200] + "..." if len(str(conv['response_obj'])) > 200 else str(conv['response_obj'])
+            context += f"Assistant: {response_preview}\n"
+        context += "---\n"
+    
     return context
 
 def get_optimized_conversation_context(question):
@@ -275,12 +283,13 @@ def get_database_schema(database=None):
             
             # Record relationships
             for fk in fks:
-                schema_info["relationships"].append({
-                    "source_table": table,
-                    "source_column": fk['constrained_columns'][0],
-                    "target_table": fk['referred_table'],
-                    "target_column": fk['referred_columns'][0]
-                })
+                for src_col, tgt_col in zip(fk['constrained_columns'], fk['referred_columns']):
+                    schema_info["relationships"].append({
+                        "source_table": table,
+                        "source_column": src_col,
+                        "target_table": fk['referred_table'],
+                        "target_column": tgt_col
+                    })
         
         # Cache in Redis
         try:
@@ -378,10 +387,11 @@ def generate_sql_token_optimized(question, database=None, error_context=None):
     schema_info = get_database_schema(database)
     if not schema_info:
         return None
-    conversation_context = get_conversation_context(limit=1, truncate=100)
+    conversation_context = get_conversation_context()
     relevant_tables, relevant_columns = extract_relevant_tables_columns(question, schema_info)
+    # Try to use domain-specific prompt
     try:
-        domain_prompt = generate_domain_specific_prompt(question, schema_info, relevant_tables)
+        domain_prompt = generate_domain_specific_prompt(question, schema_info)
         if conversation_context:
             domain_prompt += f"\n{conversation_context}\n"
         if error_context:
@@ -391,19 +401,29 @@ def generate_sql_token_optimized(question, database=None, error_context=None):
         # Fallback to original prompt if domain-specific fails
         schema_prompt = "Schema (compact format):\n"
         compact_schema = format_compact_schema({
-            "tables": {t: schema_info['tables'][t] for t in relevant_tables if t in schema_info['tables']}
-            # relationships omitted for token efficiency
+            "tables": {t: schema_info['tables'][t] for t in relevant_tables if t in schema_info['tables']},
+            "relationships": [r for r in schema_info['relationships'] if r['source_table'] in relevant_tables or r['target_table'] in relevant_tables]
         })
         schema_prompt += compact_schema
         context_prompt = f"\n{conversation_context}\n" if conversation_context else ""
         error_feedback_prompt = f"\nThe previously generated query failed with the error: \"{error_context}\".\n" if error_context else ""
         prompt = f"""
-        You are an expert SQL analyst.
+        You are an expert SQL analyst with deep knowledge of this database schema:
         {schema_prompt}
         {context_prompt}
         {error_feedback_prompt}
         For the following question: \"{question}\"
-        Use only the schema above. Output only the SQL query.
+        Generate the most appropriate SQL query following these rules:
+        1. Use only the tables and columns that exist in the schema
+        2. Prefer JOINs over subqueries when possible
+        3. Include all necessary WHERE clauses to answer the question
+        4. For aggregate questions, include appropriate GROUP BY
+        5. For time series data, use appropriate date functions
+        6. If this is a follow-up question, consider the context from previous queries
+        7. Return ONLY the SQL query, no explanations or markdown
+        If the question cannot be answered with the available schema, return: 
+        --ERROR: Question cannot be answered with available data
+        SQL Query:
         """
     # --- LLM Result Caching ---
     llm_cache_key = f"llm_sql_{hash(question + json.dumps(list(relevant_tables)))}_{database or 'default'}"
@@ -531,7 +551,7 @@ def execute_query(sql, database=None):
         return None, e
 
 def generate_visualization(df, chart_type):
-    logging.info(f"generate_visualization called with chart_type={chart_type}, df shape={df.shape}")
+    """Generate different types of visualizations"""
     start_time = time.time()
     plt.figure(figsize=(10, 5))
     # Use a valid style, fallback if not available
@@ -541,10 +561,6 @@ def generate_visualization(df, chart_type):
         plt.style.use('ggplot')
     
     try:
-        if df is None or df.empty:
-            logging.warning("generate_visualization: DataFrame is empty, skipping chart generation.")
-            return None
-        
         if chart_type == "bar":
             if len(df.columns) >= 2:
                 x_col = df.columns[0]
@@ -1007,8 +1023,12 @@ def identify_business_domain(schema_info):
         return 'financial'
     return 'general'
 
-def generate_domain_specific_prompt(question, schema_info, relevant_tables, domain_context=None):
+def generate_domain_specific_prompt(question, schema_info, domain_context=None):
+    """Generate prompts optimized for specific business domains"""
+    
+    # Identify domain from schema
     domain = identify_business_domain(schema_info)
+    
     domain_prompts = {
         'hr': {
             'context': "This is an HR management system. Focus on employee, attendance, leave, and payroll data.",
@@ -1035,20 +1055,32 @@ def generate_domain_specific_prompt(question, schema_info, relevant_tables, doma
             ]
         }
     }
+    
     domain_info = domain_prompts.get(domain, {})
+    
     base_prompt = f"""
     You are an expert SQL analyst for a {domain} system.
+    
     {domain_info.get('context', '')}
+    
     Schema (compact format):
-    {format_compact_schema({
-        "tables": {t: schema_info['tables'][t] for t in relevant_tables if t in schema_info['tables']}
-        # relationships omitted for token efficiency
-    })}
+    {format_compact_schema(schema_info)}
+    
     Common patterns for this domain:
     {chr(10).join(domain_info.get('common_patterns', []))}
+    
     Question: \"{question}\"
-    Use only the schema above. Output only the SQL query.
+    
+    Generate efficient SQL following these rules:
+    1. Use only existing tables/columns from schema
+    2. Prefer JOINs over subqueries
+    3. Include appropriate WHERE clauses
+    4. Use domain-specific logic (e.g., active employees, valid stock levels)
+    5. Return only the SQL query
+    
+    SQL:
     """
+    
     return base_prompt
 
 def generate_sql(question, schema, database, error_context=None):
@@ -1125,13 +1157,6 @@ def validate_and_sanitize_results(df, question):
             df[col] = df[col].astype(str)
     
     return df, "Success"
-
-def sanitize_dataframe_for_json(df):
-    # Convert NaT to None for all columns
-    for col in df.columns:
-        if pd.api.types.is_datetime64_any_dtype(df[col]):
-            df[col] = df[col].astype(object).where(df[col].notnull(), None)
-    return df
 
 @app.before_request
 def before_request():
@@ -1236,19 +1261,17 @@ def chat():
             df, err = execute_query(sql, DB_CONFIG['database'])
 
             if err:
-                # Log the real error for debugging
-                logging.error(f"SQL execution error: {err}")
-                user_msg = "Sorry, I couldn't answer your question due to a database issue. Please try rephrasing your request or ask about something else."
-                add_to_conversation_history(question, user_msg, sql or "")
+                # Show a generic error message to the user, do not expose SQL or error details
+                error_msg = "Sorry, I couldn't retrieve the information you requested. Please try rephrasing your question or ask about something else."
+                add_to_conversation_history(question, error_msg, "")
                 return jsonify({
                     "type": "text",
-                    "content": user_msg,
-                    "sql": "",  # Don't show the SQL for errors
+                    "content": error_msg,
+                    "sql": "",
                     "conversation_count": len(session.get('conversation_history', []))
                 })
 
             if df is not None:
-                df = sanitize_dataframe_for_json(df)
                 # This block runs if the query was successful (either first try or retry)
                 # Step 3: Determine response type
                 if "pie chart" in q_lower: response_type = "pie"
@@ -1404,12 +1427,12 @@ def chat():
 
     except Exception as e:
         logging.error(f"Error in chat endpoint: {e}")
-        user_msg = "Sorry, something went wrong while processing your request. Please try again or rephrase your question."
+        error_msg = f"An error occurred: {str(e)}"
         question_text = locals().get('question', 'N/A')
-        add_to_conversation_history(question_text, user_msg, "")
+        add_to_conversation_history(question_text, error_msg, "")
         return jsonify({
             "type": "text",
-            "content": user_msg,
+            "content": error_msg,
             "sql": "",
             "conversation_count": len(session.get('conversation_history', []))
         }), 500
@@ -1457,16 +1480,13 @@ def batch_chat():
                 if err:
                     responses.append({"type": "text", "content": f"Error: {str(err)}", "sql": sql})
                 elif df is not None:
-                    df = sanitize_dataframe_for_json(df)
-                    df_head2 = sanitize_dataframe_for_json(df.head(2))
-                    df_head5 = sanitize_dataframe_for_json(df.head(5))
-                    response_type = determine_response_type(q, df_head2.to_dict())
+                    response_type = determine_response_type(q, df.head(2).to_dict())
                     if response_type == "card":
                         content = format_card_response(df)
                         responses.append({"type": "card", "content": content, "sql": sql})
                     elif response_type in ("bar", "line", "pie", "scatter"):
                         chart = generate_visualization(df, response_type)
-                        responses.append({"type": "chart", "chart_type": response_type, "content": chart, "sql": sql, "data_preview": df_head5.to_dict(orient='records')})
+                        responses.append({"type": "chart", "chart_type": response_type, "content": chart, "sql": sql, "data_preview": df.head(5).to_dict(orient='records')})
                     elif response_type == "text":
                         content = format_text_response(df, q)
                         responses.append({"type": "text", "content": content, "sql": sql})
