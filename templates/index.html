@@ -48,6 +48,16 @@
         let useInteractiveCharts = localStorage.getItem('useInteractiveCharts') === 'true'; // Toggle for chart mode
         const DEV_MODE = false; // Set to true to show SQL preview and data preview
 
+        // Global error handler to catch unhandled errors
+        window.addEventListener('error', function(event) {
+            console.error('Global error caught:', event.error);
+        });
+
+        // Handle unhandled promise rejections
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('Unhandled promise rejection:', event.reason);
+        });
+
         // Initialize the app
         document.addEventListener('DOMContentLoaded', function () {
             loadConversationHistory();
@@ -815,7 +825,13 @@
 
         // Create interactive chart using Chart.js
         function createInteractiveChart(canvasId, data, chartType) {
-            const ctx = document.getElementById(canvasId).getContext('2d');
+            try {
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) {
+                    console.error('Canvas element not found:', canvasId);
+                    return;
+                }
+                const ctx = canvas.getContext('2d');
             
             // Prepare data for Chart.js
             const labels = data.map(row => {
@@ -830,6 +846,7 @@
 
             const chartConfig = {
                 type: chartType === 'bar' ? 'bar' : 
+                      chartType === 'stack' ? 'bar' : 
                       chartType === 'line' ? 'line' : 
                       chartType === 'pie' ? 'pie' : 'scatter',
                 data: {
@@ -852,11 +869,22 @@
                             display: true,
                             text: `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart`
                         }
-                    }
+                    },
+                    scales: chartType === 'stack' ? {
+                        x: {
+                            stacked: true
+                        },
+                        y: {
+                            stacked: true
+                        }
+                    } : {}
                 }
             };
 
             new Chart(ctx, chartConfig);
+            } catch (error) {
+                console.error('Error creating interactive chart:', error);
+            }
         }
 
         // Show diagram

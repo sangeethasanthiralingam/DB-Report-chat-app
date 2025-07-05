@@ -52,6 +52,7 @@ class ResponseFormatter:
         - "card" for key metrics display (1-4 important numbers)
         - "table" for tabular data comparisons
         - "bar" for bar charts (comparisons between categories)
+        - "stack" for stacked bar charts (stacked comparisons)
         - "line" for line charts (trends over time)
         - "pie" for pie charts (proportion breakdowns)
         - "scatter" for scatter plots (relationships between variables)
@@ -87,6 +88,28 @@ class ResponseFormatter:
         try:
             if chart_type == "bar":
                 if len(df.columns) >= 2:
+                    x_col = df.columns[0]
+                    y_col = df.columns[1]
+                    df.plot(kind='bar', x=x_col, y=y_col, legend=False)
+                    plt.title(f"{y_col} by {x_col}")
+                else:
+                    df.plot(kind='bar', legend=False)
+                    plt.title("Data Distribution")
+            
+            elif chart_type == "stack":
+                if len(df.columns) >= 3:
+                    # For stacked charts, we need at least 3 columns: x-axis, y-axis, and stack category
+                    x_col = df.columns[0]
+                    y_col = df.columns[1]
+                    stack_col = df.columns[2]
+                    
+                    # Pivot the data for stacking
+                    pivot_df = df.pivot(index=x_col, columns=stack_col, values=y_col)
+                    pivot_df.plot(kind='bar', stacked=True)
+                    plt.title(f"{y_col} by {x_col} (Stacked by {stack_col})")
+                    plt.legend(title=stack_col, bbox_to_anchor=(1.05, 1), loc='upper left')
+                elif len(df.columns) >= 2:
+                    # Fallback to regular bar chart if not enough columns for stacking
                     x_col = df.columns[0]
                     y_col = df.columns[1]
                     df.plot(kind='bar', x=x_col, y=y_col, legend=False)

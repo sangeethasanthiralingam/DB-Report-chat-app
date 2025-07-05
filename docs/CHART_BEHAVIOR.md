@@ -1,97 +1,51 @@
-# Chart Behavior in DB Report Chat App
+# Chart Behavior - DB Report Chat App
 
-## 📊 **Current Chart Behavior**
+## 📊 Chart Types & Behavior
 
-The charts in your application are **intentionally displayed as static images**. This is the default and recommended behavior for several reasons:
+The DB Report Chat App supports multiple chart types with both static and interactive display options.
 
-### **Why Static Images?**
+### Supported Chart Types
 
-1. **Cross-platform Compatibility**: Images work consistently across all browsers and devices
-2. **No JavaScript Dependencies**: No need for external chart libraries
-3. **Consistent Rendering**: Same appearance regardless of browser or device
-4. **Server-side Generation**: Better for data security and performance
-5. **Simplified Architecture**: Easier to maintain and debug
+| Chart Type | Keywords | Description | Use Case |
+|------------|----------|-------------|----------|
+| **Bar** | "bar chart", "bar diagram" | Vertical/horizontal bars | Comparisons between categories |
+| **Line** | "line chart", "line diagram" | Connected data points | Trends over time |
+| **Pie** | "pie chart", "pie diagram" | Circular segments | Proportion breakdowns |
+| **Scatter** | "scatter plot", "scatter chart" | Data point distribution | Relationships between variables |
+| **Stack** | "stack chart", "stacked chart" | Stacked bars | Layered comparisons |
 
-### **How It Works**
+## 🎯 Display Modes
 
-1. **Data Query**: User asks for a chart → Database query executed
-2. **Chart Generation**: Matplotlib creates chart on server
-3. **Image Conversion**: Chart converted to PNG image (base64 or file)
-4. **Frontend Display**: Image displayed using `<img>` tag
+### Static Images (Default)
+- **Format**: PNG images generated server-side
+- **Advantages**: Cross-platform compatibility, no JavaScript dependencies
+- **Generation**: Matplotlib on server, converted to base64 or file
 
-### **Chart Types Supported**
+### Interactive Charts (Optional)
+- **Format**: Chart.js canvas elements
+- **Advantages**: Hover tooltips, zoom, responsive design
+- **Toggle**: Individual chart mode switching
 
-- **Bar Charts**: `"bar chart"`, `"bar diagram"`
-- **Line Charts**: `"line chart"`, `"line diagram"`
-- **Pie Charts**: `"pie chart"`, `"pie diagram"`
-- **Scatter Plots**: `"scatter plot"`, `"scatter chart"`
+## 🔧 Technical Implementation
 
-## 🎯 **New Interactive Chart Option**
-
-We've added an **optional interactive chart mode** using Chart.js. You can now toggle between static and interactive charts.
-
-### **How to Use Interactive Charts**
-
-1. **Contextual Button**: Each chart displays its own toggle button
-2. **Mode Switch**: Click "Switch to Interactive" or "Switch to Static"
-3. **Instant Conversion**: Chart transforms immediately without page reload
-4. **Interactive Features**: 
-   - Hover tooltips
-   - Zoom and pan
-   - Responsive design
-   - Better data exploration
-
-### **Toggle Button States**
-
-- **Static Chart**: `📈 Switch to Interactive` (blue)
-- **Interactive Chart**: `📷 Switch to Static` (green)
-
-### **Visual Indicators**
-
-- **Contextual Buttons**: Each chart has its own mode toggle
-- **Color Coding**: Green for interactive mode, blue for static mode
-- **Instant Feedback**: Button text and color change immediately
-- **Console Logs**: Check browser console for mode changes
-
-### **Interactive Chart Features**
-
-- **Hover Effects**: See exact values on hover
-- **Responsive**: Automatically adjusts to container size
-- **Smooth Animations**: Professional chart transitions
-- **Better Data Handling**: Automatic data parsing and formatting
-
-## 🔧 **Technical Implementation**
-
-### **Static Chart Flow**
+### Static Chart Flow
 ```
 User Request → SQL Query → DataFrame → Matplotlib → PNG Image → Frontend Display
 ```
 
-### **Interactive Chart Flow**
+### Interactive Chart Flow
 ```
 User Request → SQL Query → DataFrame → JSON Data → Chart.js → Canvas Element
 ```
 
-### **Code Location**
-
+### Code Locations
 - **Static Charts**: `utils/response_formatter.py` → `generate_visualization()`
 - **Interactive Charts**: `templates/index.html` → `createInteractiveChart()`
 - **Toggle Logic**: `templates/index.html` → `toggleChartMode()`
 
-## 📈 **Performance Comparison**
+## 🎨 Chart Configuration
 
-| Feature | Static Images | Interactive Charts |
-|---------|---------------|-------------------|
-| **Load Time** | Fast | Slightly slower |
-| **Memory Usage** | Low | Higher |
-| **Browser Compatibility** | Excellent | Good |
-| **Data Exploration** | Limited | Excellent |
-| **File Size** | Small | Larger (Chart.js library) |
-| **Offline Support** | Yes | Yes |
-
-## 🎨 **Customization Options**
-
-### **Static Chart Customization**
+### Static Chart Settings
 ```python
 # In utils/response_formatter.py
 plt.figure(figsize=(10, 5))  # Chart size
@@ -99,7 +53,7 @@ plt.style.use('seaborn-v0_8')  # Style
 plt.savefig(buf, format='png', dpi=120)  # Quality
 ```
 
-### **Interactive Chart Customization**
+### Interactive Chart Settings
 ```javascript
 // In templates/index.html
 const chartConfig = {
@@ -112,65 +66,128 @@ const chartConfig = {
 };
 ```
 
-## 🚀 **Best Practices**
+## 📈 Performance Comparison
 
-### **When to Use Static Charts**
+| Feature | Static Images | Interactive Charts |
+|---------|---------------|-------------------|
+| **Load Time** | Fast | Slightly slower |
+| **Memory Usage** | Low | Higher |
+| **Browser Compatibility** | Excellent | Good |
+| **Data Exploration** | Limited | Excellent |
+| **File Size** | Small | Larger (Chart.js library) |
+| **Offline Support** | Yes | Yes |
+
+## 🚀 Usage Guidelines
+
+### When to Use Static Charts
 - ✅ Production environments
 - ✅ Limited bandwidth
 - ✅ Simple data visualization
 - ✅ Consistent appearance requirements
 - ✅ Mobile applications
 
-### **When to Use Interactive Charts**
+### When to Use Interactive Charts
 - ✅ Data exploration sessions
 - ✅ Complex datasets
 - ✅ User interaction requirements
 - ✅ Development/testing environments
 - ✅ Desktop applications
 
-## 🔄 **Switching Between Modes**
+## 🔄 Mode Switching
 
-Each chart has its own contextual toggle button:
+### Toggle Button
+Each chart displays a contextual toggle button:
+- **Static Chart**: `📈 Switch to Interactive` (blue)
+- **Interactive Chart**: `📷 Switch to Static` (green)
 
+### Switching Process
 1. **Click the button** next to any chart
 2. **Chart transforms immediately** (no page reload needed)
 3. **Individual control** - each chart can be different
-4. **Persistent preference** - your choice is remembered for future charts
+4. **Persistent preference** - choice remembered for future charts
 
-## 📝 **Configuration**
+## ⚙️ Configuration
 
-### **Default Mode**
+### Default Mode
 ```javascript
 let useInteractiveCharts = localStorage.getItem('useInteractiveCharts') === 'true'; // Default: Static charts
 ```
 
-### **Persistent Setting**
+### Persistent Settings
 The chart mode preference is automatically saved to localStorage and persists across:
 - ✅ Page reloads
 - ✅ Browser sessions
 - ✅ Browser restarts
 - ✅ Tab closures and reopening
 
-The setting is stored as `'true'` or `'false'` in the browser's localStorage.
+## 🐛 Troubleshooting
 
-## 🐛 **Troubleshooting**
-
-### **Static Charts Not Showing**
+### Static Charts Not Showing
 - Check if `static/generated/` directory exists
 - Verify file permissions
 - Check browser console for image loading errors
 
-### **Interactive Charts Not Working**
+### Interactive Charts Not Working
 - Ensure Chart.js is loaded (check network tab)
 - Verify data format in browser console
 - Check for JavaScript errors
 
-### **Toggle Button Not Working**
+### Toggle Button Not Working
 - Refresh the page
 - Check browser console for errors
 - Verify button ID matches JavaScript
 
-## 📚 **Additional Resources**
+## 📊 Chart Generation Examples
+
+### Bar Chart
+```
+"Create a bar chart of sales by month"
+"Show me a bar diagram of employee count by department"
+```
+
+### Line Chart
+```
+"Generate a line chart of revenue over time"
+"Show me a line diagram of website traffic"
+```
+
+### Pie Chart
+```
+"Create a pie chart of sales by category"
+"Show me a pie diagram of market share"
+```
+
+### Scatter Plot
+```
+"Generate a scatter plot of price vs quality"
+"Show me a scatter chart of age vs salary"
+```
+
+### Stack Chart
+```
+"Sales by date stack chart"
+"Create a stacked bar chart of revenue by region"
+```
+
+## 🔧 Advanced Features
+
+### Data Preview
+- Interactive charts show data preview in development mode
+- Hover tooltips display exact values
+- Responsive design adapts to container size
+
+### Chart Customization
+- Automatic color schemes
+- Responsive sizing
+- Professional styling
+- Export capabilities
+
+### Error Handling
+- Graceful fallback to table format
+- Error logging for debugging
+- User-friendly error messages
+
+## 📚 Resources
 
 - **Matplotlib Documentation**: https://matplotlib.org/
 - **Chart.js Documentation**: https://www.chartjs.org/
@@ -178,4 +195,4 @@ The setting is stored as `'true'` or `'false'` in the browser's localStorage.
 
 ---
 
-**Note**: The static image approach is the recommended default for production use. Interactive charts are provided as an enhancement for data exploration scenarios. 
+**Note**: Static images are recommended for production use. Interactive charts are provided as an enhancement for data exploration scenarios. 

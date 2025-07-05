@@ -2,17 +2,15 @@ from flask import Flask, request, jsonify, render_template, session, g, Response
 import pandas as pd
 import json
 import os
-from datetime import datetime
 from flask_session import Session
 import time
 import logging
 from dotenv import load_dotenv
 
 load_dotenv()
-# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates', static_folder='static')
 
 # Custom JSON encoder to handle pandas NaT values
 class CustomJSONEncoder(json.JSONEncoder):
@@ -23,32 +21,18 @@ class CustomJSONEncoder(json.JSONEncoder):
             return obj.isoformat()
         return super().default(obj)
 
-# Configure Flask JSON handling - use try/except for compatibility
+# Configure Flask JSON handling
 try:
-    # For newer Flask versions
     app.json_provider_class = type('CustomJSONProvider', (app.json_provider_class,), {
         'default': lambda self, obj: CustomJSONEncoder().default(obj)
     })
 except:
-    # If JSON encoder configuration fails, NaT values will be handled in add_to_conversation_history
     pass
 
 # Configure Flask-Session
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-this')
 app.config['SESSION_TYPE'] = 'filesystem'
 Session(app)
-
-# OpenAI configuration is now handled by individual modules
-
-# Database configuration and caching are now handled by the database_manager module
-
-# Session management is now handled by the session_manager module
-
-# Image management is now handled by the session_manager module
-
-# Conversation context functions are now handled by the session_manager module
-
-# Database functions are now handled by the database_manager module
 
 # Import utility modules
 from utils.domain_analyzer import get_domain_analyzer
@@ -70,23 +54,6 @@ data_processor = get_data_processor()
 session_manager = get_session_manager()
 response_formatter = get_response_formatter()
 chat_processor = get_chat_processor()
-analyzer = domain_analyzer  # Keep backward compatibility
-import logging
-logging.info(f"[DEBUG] Domain analyzer initialized with {len(domain_analyzer.business_terms)} business terms")
-logging.info(f"[DEBUG] Sample business terms: {list(domain_analyzer.business_terms.items())[:5]}")
-logging.info(f"[DEBUG] Does analyzer have 'customers' mapping? {'customers' in [v.lower() for v in domain_analyzer.business_terms.values()]}")
-
-# Schema analysis functions are now handled by the database_manager module
-
-# SQL generation is now handled by the database_manager module
-
-# Response type determination is now handled by the response_formatter module
-
-# Documentation functions are now handled by the response_formatter module
-
-# Database diagram and SQL generation functions are now handled by the database_manager module
-
-# Data processing functions are now handled by the data_processor module
 
 @app.before_request
 def before_request():
@@ -107,7 +74,6 @@ def home():
 @app.route('/chat', methods=['POST'])
 def chat() -> tuple[Response, int] | Response:
     try:
-        # Initialize session
         session_manager.init_session()
         
         data = request.json
@@ -200,11 +166,11 @@ def chat() -> tuple[Response, int] | Response:
                     "conversation_count": len(session.get('conversation_history', []))
                 })
 
-        # Step 1: Generate SQL (token-optimized)
+        # Generate SQL (token-optimized)
         sql = generate_sql_token_optimized(question, DB_CONFIG['database'])
 
         if sql:
-            # Step 2: Execute query and handle errors with a retry
+            # Execute query and handle errors with a retry
             df, err = execute_query(sql, DB_CONFIG['database'])
 
             if err:
@@ -228,10 +194,11 @@ def chat() -> tuple[Response, int] | Response:
                 })
 
             if df is not None:
-                # This block runs if the query was successful (either first try or retry)
-                # Step 3: Determine response type (without AI)
+                # Determine response type
                 if "pie chart" in q_lower or "pie diagram" in q_lower:
                     response_type = "pie"
+                elif "stack chart" in q_lower or "stacked chart" in q_lower or "stacked bar" in q_lower:
+                    response_type = "stack"
                 elif "bar chart" in q_lower or "bar diagram" in q_lower:
                     response_type = "bar"
                 elif "line chart" in q_lower or "line diagram" in q_lower:
@@ -243,7 +210,7 @@ def chat() -> tuple[Response, int] | Response:
                 else:
                     response_type = "table"
                 
-                # Step 4: Format response
+                # Format response
                 if response_type == "card":
                     content = response_formatter.format_card_response(df)
                     if content:
@@ -271,7 +238,7 @@ def chat() -> tuple[Response, int] | Response:
                             "conversation_count": len(session.get('conversation_history', []))
                         })
                 
-                elif response_type in ("bar", "line", "pie", "scatter"):
+                elif response_type in ("bar", "line", "pie", "scatter", "stack"):
                     chart = response_formatter.generate_visualization(df, response_type)
                     if chart:
                         filename = session_manager.save_image_to_file(chart, response_type, session.get('id'))
@@ -329,13 +296,10 @@ def chat() -> tuple[Response, int] | Response:
                     })
 
                 # Default to table for other cases
-                # Sanitize DataFrame before JSON conversion to handle NaT values
                 try:
-                    # Use the safer JSON conversion function
                     content = data_processor.dataframe_to_json_safe(df)
                 except Exception as e:
                     logging.warning(f"Error converting DataFrame to dict: {e}")
-                    # Fallback: convert to string representation
                     content = df.to_string(index=False) if not df.empty else ""
                 
                 session_manager.add_to_conversation_history(question, {
@@ -350,7 +314,7 @@ def chat() -> tuple[Response, int] | Response:
                     "conversation_count": len(session.get('conversation_history', []))
                 })
 
-        # Step 5: Handle non-SQL queries (documentation, conversational)
+        # Handle non-SQL queries (documentation, conversational)
         else:
             is_doc_keyword = any(word in q_lower for word in [
                 'table', 'column', 'schema', 'structure', 'database', 'list', 
@@ -405,9 +369,9 @@ def chat() -> tuple[Response, int] | Response:
     return jsonify({
         "type": "text",
         "content": "An unexpected error occurred",
-            "sql": "",
-            "conversation_count": len(session.get('conversation_history', []))
-        }), 500
+        "sql": "",
+        "conversation_count": len(session.get('conversation_history', []))
+    }), 500
 
 @app.route('/conversation_history', methods=['GET'])
 def get_conversation_history():
@@ -505,7 +469,7 @@ def batch_chat():
                     if response_type == "card":
                         content = response_formatter.format_card_response(df)
                         responses.append({"type": "card", "content": content, "sql": sql})
-                    elif response_type in ("bar", "line", "pie", "scatter"):
+                    elif response_type in ("bar", "line", "pie", "scatter", "stack"):
                         chart = response_formatter.generate_visualization(df, response_type)
                         filename = None
                         if chart:
@@ -531,25 +495,6 @@ def batch_chat():
     except Exception as e:
         logging.error(f"Error in batch_chat endpoint: {e}")
         return jsonify({"error": str(e)}), 500
-
-# @app.route('/test_response', methods=['GET'])
-# def test_response():
-#     """Test endpoint to verify response format"""
-#     test_data = [
-#         {"id": 1, "name": "Customer 1", "type": "customer"},
-#         {"id": 2, "name": "Customer 2", "type": "customer"}
-#     ]
-#     return jsonify({
-#         "type": "table",
-#         "content": test_data,
-#         "sql": "SELECT * FROM core_parties WHERE type = 'customer'",
-#         "conversation_count": 1
-#     })
-
-# @app.route('/test_frontend')
-# def test_frontend():
-#     """Serve the frontend debug test page"""
-#     return render_template('test_frontend.html')
 
 if __name__ == '__main__':
     # Clean up old images on startup
