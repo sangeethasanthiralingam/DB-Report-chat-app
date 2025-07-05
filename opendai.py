@@ -101,6 +101,10 @@ def init_session():
     """Initialize session with conversation history"""
     if 'conversation_history' not in session:
         session['conversation_history'] = []
+    if 'generated_images' not in session:
+        session['generated_images'] = []
+    if 'id' not in session:
+        session['id'] = hashlib.md5(f"{datetime.now().isoformat()}{os.getpid()}".encode()).hexdigest()[:8]
 
 def add_to_conversation_history(question, response_obj, sql_query=""):
     """Add a conversation turn to the history"""
@@ -120,6 +124,86 @@ def add_to_conversation_history(question, response_obj, sql_query=""):
         session['conversation_history'] = session['conversation_history'][-10:]
     
     session.modified = True
+
+def save_image_to_file(img_base64, chart_type, session_id=None):
+    """Save base64 image to file and return the filename"""
+    try:
+        # Create generated directory if it doesn't exist
+        generated_dir = os.path.join(os.path.dirname(__file__), 'static', 'generated')
+        os.makedirs(generated_dir, exist_ok=True)
+        
+        # Generate unique filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        session_suffix = f"_{session_id}" if session_id else ""
+        filename = f"{chart_type}_{timestamp}{session_suffix}.png"
+        filepath = os.path.join(generated_dir, filename)
+        
+        # Decode and save image
+        img_data = base64.b64decode(img_base64)
+        with open(filepath, 'wb') as f:
+            f.write(img_data)
+        
+        logging.info(f"Image saved to file: {filepath}")
+        return filename
+    except Exception as e:
+        logging.error(f"Error saving image to file: {e}")
+        return None
+
+def delete_session_images():
+    """Delete all images associated with the current session"""
+    if 'generated_images' not in session:
+        return
+    
+    generated_dir = os.path.join(os.path.dirname(__file__), 'static', 'generated')
+    if not os.path.exists(generated_dir):
+        return
+    
+    deleted_count = 0
+    for filename in session['generated_images']:
+        filepath = os.path.join(generated_dir, filename)
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                deleted_count += 1
+                logging.info(f"Deleted image file: {filepath}")
+        except Exception as e:
+            logging.error(f"Error deleting image file {filepath}: {e}")
+    
+    if deleted_count > 0:
+        logging.info(f"Deleted {deleted_count} image files for session")
+    
+    # Clear the list
+    session['generated_images'] = []
+    session.modified = True
+
+def cleanup_old_images():
+    """Clean up old image files that are older than 24 hours"""
+    generated_dir = os.path.join(os.path.dirname(__file__), 'static', 'generated')
+    if not os.path.exists(generated_dir):
+        return
+    
+    current_time = datetime.now()
+    deleted_count = 0
+    
+    try:
+        for filename in os.listdir(generated_dir):
+            if filename.endswith('.png'):
+                filepath = os.path.join(generated_dir, filename)
+                file_time = datetime.fromtimestamp(os.path.getctime(filepath))
+                
+                # Delete files older than 24 hours
+                if (current_time - file_time).total_seconds() > 86400:  # 24 hours
+                    try:
+                        os.remove(filepath)
+                        deleted_count += 1
+                        logging.info(f"Cleaned up old image file: {filepath}")
+                    except Exception as e:
+                        logging.error(f"Error deleting old image file {filepath}: {e}")
+        
+        if deleted_count > 0:
+            logging.info(f"Cleaned up {deleted_count} old image files")
+    except Exception as e:
+        logging.error(f"Error during image cleanup: {e}")
 
 def get_conversation_context(limit=1, truncate=100):
     if 'conversation_history' not in session or not session['conversation_history']:
@@ -1168,10 +1252,19 @@ def chat():
         if 'relationship' in q_lower and ('diagram' in q_lower or 'draw' in q_lower or 'picture' in q_lower):
             diagram = generate_relationship_diagram(DB_CONFIG['database'])
             if diagram:
-                add_to_conversation_history(question, "Generated database relationship diagram", "")
+                filename = save_image_to_file(diagram, "relationship_diagram", session.get('id'))
+                if filename and 'generated_images' in session:
+                    session['generated_images'].append(filename)
+                    session.modified = True
+                add_to_conversation_history(question, {
+                    "type": "diagram",
+                    "content": filename,
+                    "title": f"Database Relationships - {DB_CONFIG['database']}",
+                    "sql": ""
+                }, "")
                 return jsonify({
                     "type": "diagram",
-                    "content": diagram,
+                    "content": filename,
                     "title": f"Database Relationships - {DB_CONFIG['database']}",
                     "sql": "",
                     "conversation_count": len(session.get('conversation_history', []))
@@ -1194,10 +1287,19 @@ def chat():
                     if table_name.lower() in q_lower:
                         diagram = generate_table_schema_diagram(table_name, DB_CONFIG['database'])
                         if diagram:
-                            add_to_conversation_history(question, f"Generated schema diagram for {table_name}", "")
+                            filename = save_image_to_file(diagram, f"schema_diagram_{table_name}", session.get('id'))
+                            if filename and 'generated_images' in session:
+                                session['generated_images'].append(filename)
+                                session.modified = True
+                            add_to_conversation_history(question, {
+                                "type": "diagram",
+                                "content": filename,
+                                "title": f"Table Schema - {table_name}",
+                                "sql": ""
+                            }, "")
                             return jsonify({
                                 "type": "diagram",
-                                "content": diagram,
+                                "content": filename,
                                 "title": f"Table Schema - {table_name}",
                                 "sql": "",
                                 "conversation_count": len(session.get('conversation_history', []))
@@ -1242,11 +1344,19 @@ def chat():
 
             if df is not None:
                 # This block runs if the query was successful (either first try or retry)
-                # Step 3: Determine response type
-                if "pie chart" in q_lower: response_type = "pie"
-                elif "bar chart" in q_lower: response_type = "bar"
-                elif "line chart" in q_lower: response_type = "line"
-                else: response_type = determine_response_type(question, df.head(2).to_dict())
+                # Step 3: Determine response type (without AI)
+                if "pie chart" in q_lower or "pie diagram" in q_lower:
+                    response_type = "pie"
+                elif "bar chart" in q_lower or "bar diagram" in q_lower:
+                    response_type = "bar"
+                elif "line chart" in q_lower or "line diagram" in q_lower:
+                    response_type = "line"
+                elif "scatter plot" in q_lower or "scatter chart" in q_lower or "scatter diagram" in q_lower:
+                    response_type = "scatter"
+                elif "card" in q_lower or "metric" in q_lower:
+                    response_type = "card"
+                else:
+                    response_type = "table"
                 
                 # Step 4: Format response
                 if response_type == "card":
@@ -1265,15 +1375,19 @@ def chat():
                 elif response_type in ("bar", "line", "pie", "scatter"):
                     chart = generate_visualization(df, response_type)
                     if chart:
+                        filename = save_image_to_file(chart, response_type, session.get('id'))
+                        if filename and 'generated_images' in session:
+                            session['generated_images'].append(filename)
+                            session.modified = True
                         add_to_conversation_history(question, {
-                            "type": response_type,
-                            "content": chart,
+                            "type": "chart",
+                            "content": filename,
                             "chart_type": response_type,
                             "data_preview": df.head(5).to_dict(orient='records'),
                             "sql": sql or ""
                         }, sql or "")
                         return jsonify({
-                            "type": "chart", "chart_type": response_type, "content": chart, "sql": sql,
+                            "type": "chart", "chart_type": response_type, "content": filename, "sql": sql,
                             "data_preview": df.head(5).to_dict(orient='records'),
                             "conversation_count": len(session.get('conversation_history', []))
                         })
@@ -1421,7 +1535,29 @@ def clear_conversation():
     init_session()
     session['conversation_history'] = []
     session.modified = True
+    delete_session_images()
     return jsonify({"message": "Conversation history cleared"})
+
+@app.route('/cleanup_images', methods=['POST'])
+def cleanup_images():
+    """Manually trigger cleanup of old images"""
+    try:
+        cleanup_old_images()
+        return jsonify({"message": "Image cleanup completed"})
+    except Exception as e:
+        logging.error(f"Error during manual image cleanup: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/session_info', methods=['GET'])
+def session_info():
+    """Get information about the current session"""
+    init_session()
+    return jsonify({
+        "session_id": session.get('id'),
+        "generated_images": session.get('generated_images', []),
+        "conversation_count": len(session.get('conversation_history', [])),
+        "current_database": DB_CONFIG['database']
+    })
 
 @app.route('/batch_chat', methods=['POST'])
 def batch_chat():
@@ -1455,7 +1591,12 @@ def batch_chat():
                         responses.append({"type": "card", "content": content, "sql": sql})
                     elif response_type in ("bar", "line", "pie", "scatter"):
                         chart = generate_visualization(df, response_type)
-                        responses.append({"type": "chart", "chart_type": response_type, "content": chart, "sql": sql, "data_preview": df.head(5).to_dict(orient='records')})
+                        if chart:
+                            filename = save_image_to_file(chart, response_type, session.get('id'))
+                            if filename and 'generated_images' in session:
+                                session['generated_images'].append(filename)
+                                session.modified = True
+                        responses.append({"type": "chart", "chart_type": response_type, "content": filename, "sql": sql, "data_preview": df.head(5).to_dict(orient='records')})
                     elif response_type == "text":
                         content = format_text_response(df, q)
                         responses.append({"type": "text", "content": content, "sql": sql})
@@ -1471,4 +1612,6 @@ def batch_chat():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
+    # Clean up old images on startup
+    cleanup_old_images()
     app.run(debug=True, port=5000)

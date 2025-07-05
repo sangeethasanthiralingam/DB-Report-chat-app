@@ -393,9 +393,17 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message bot-message';
 
+            // If chartData looks like a filename (not base64), use static path
+            let imgSrc = '';
+            if (chartData && !chartData.startsWith('iVBOR') && !chartData.startsWith('/9j/')) {
+                imgSrc = `/static/generated/${chartData}`;
+            } else {
+                imgSrc = `data:image/png;base64,${chartData}`;
+            }
+
             let chartHtml = `
                 <div class="chart-container">
-                    <img class="chart-img" src="data:image/png;base64,${chartData}" alt="Chart">
+                    <img class="chart-img" src="${imgSrc}" alt="Chart">
                 </div>
             `;
 
@@ -422,10 +430,18 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message bot-message';
 
+            // If content looks like a filename (not base64), use static path
+            let imgSrc = '';
+            if (content && !content.startsWith('iVBOR') && !content.startsWith('/9j/')) {
+                imgSrc = `/static/generated/${content}`;
+            } else {
+                imgSrc = `data:image/png;base64,${content}`;
+            }
+
             let diagramHtml = `
                 <div class="diagram-container">
                     <div class="diagram-title">${title}</div>
-                    <img class="diagram-img" src="data:image/png;base64,${content}" alt="${title}">
+                    <img class="diagram-img" src="${imgSrc}" alt="${title}">
                 </div>
             `;
 
