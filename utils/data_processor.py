@@ -34,10 +34,13 @@ class DataProcessor:
                     lambda x: str(x) if pd.notna(x) else None
                 )
             elif pd.api.types.is_numeric_dtype(df_sanitized[col]):
-                # Handle numeric columns with NaN values
+                # Handle numeric columns with NaN values - convert to None for JSON
                 df_sanitized[col] = df_sanitized[col].apply(
-                    lambda x: float(x) if pd.notna(x) else None
+                    lambda x: float(x) if pd.notna(x) and not pd.isna(x) else None
                 )
+        
+        # Additional safety check: replace any remaining NaN/NaT values with None
+        df_sanitized = df_sanitized.where(pd.notna(df_sanitized), None)
         
         return df_sanitized
     
@@ -200,6 +203,30 @@ class DataProcessor:
             return obj.isoformat()
         else:
             return obj
+    
+    def dataframe_to_json_safe(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Convert DataFrame to JSON-safe list of dictionaries, handling NaN values."""
+        if df is None or df.empty:
+            return []
+        
+        # First sanitize the DataFrame
+        df_sanitized = self.sanitize_dataframe_for_json(df)
+        
+        # Convert to records and clean each record
+        records = df_sanitized.to_dict(orient='records')
+        
+        # Additional cleaning pass for any remaining NaN values
+        cleaned_records = []
+        for record in records:
+            cleaned_record = {}
+            for key, value in record.items():
+                if pd.isna(value) or value == 'nan' or value == 'NaN':
+                    cleaned_record[key] = None
+                else:
+                    cleaned_record[key] = value
+            cleaned_records.append(cleaned_record)
+        
+        return cleaned_records
     
     def extract_relevant_tables_columns(self, question: str, schema_info: Dict[str, Any]) -> Tuple[set, Dict[str, set]]:
         """Extract relevant tables and columns from the question using simple keyword matching."""

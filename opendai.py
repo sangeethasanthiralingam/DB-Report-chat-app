@@ -258,8 +258,7 @@ def chat() -> tuple[Response, int] | Response:
                         })
                     else:
                         # Fallback to table if card generation fails
-                        df_sanitized = data_processor.sanitize_dataframe_for_json(df)
-                        content = df_sanitized.to_dict(orient='records')
+                        content = data_processor.dataframe_to_json_safe(df)
                         session_manager.add_to_conversation_history(question, {
                             "type": "table",
                             "content": content,
@@ -280,8 +279,7 @@ def chat() -> tuple[Response, int] | Response:
                             session['generated_images'].append(filename)
                             session.modified = True
                         # Sanitize DataFrame for data preview
-                        df_sanitized = data_processor.sanitize_dataframe_for_json(df)
-                        data_preview = df_sanitized.head(5).to_dict(orient='records') if not df_sanitized.empty else []
+                        data_preview = data_processor.dataframe_to_json_safe(df.head(5)) if not df.empty else []
                         session_manager.add_to_conversation_history(question, {
                             "type": "chart",
                             "content": filename,
@@ -333,8 +331,8 @@ def chat() -> tuple[Response, int] | Response:
                 # Default to table for other cases
                 # Sanitize DataFrame before JSON conversion to handle NaT values
                 try:
-                    df_sanitized = data_processor.sanitize_dataframe_for_json(df)
-                    content = df_sanitized.to_dict(orient='records') if not df_sanitized.empty else []
+                    # Use the safer JSON conversion function
+                    content = data_processor.dataframe_to_json_safe(df)
                 except Exception as e:
                     logging.warning(f"Error converting DataFrame to dict: {e}")
                     # Fallback: convert to string representation
@@ -481,16 +479,14 @@ def batch_chat():
                                 session['generated_images'].append(filename)
                                 session.modified = True
                         # Sanitize DataFrame for data preview
-                        df_sanitized = data_processor.sanitize_dataframe_for_json(df)
-                        data_preview = df_sanitized.head(5).to_dict(orient='records') if not df_sanitized.empty else []
+                        data_preview = data_processor.dataframe_to_json_safe(df.head(5)) if not df.empty else []
                         responses.append({"type": "chart", "chart_type": response_type, "content": filename or "", "sql": sql, "data_preview": data_preview})
                     elif response_type == "text":
                         content = response_formatter.format_text_response(df, q)
                         responses.append({"type": "text", "content": content, "sql": sql})
                     else:
                         # Sanitize DataFrame for table response
-                        df_sanitized = data_processor.sanitize_dataframe_for_json(df)
-                        content = df_sanitized.to_dict(orient='records') if not df_sanitized.empty else []
+                        content = data_processor.dataframe_to_json_safe(df)
                         responses.append({"type": "table", "content": content, "sql": sql})
                 else:
                     responses.append({"type": "text", "content": "No data found.", "sql": sql})
@@ -500,6 +496,25 @@ def batch_chat():
     except Exception as e:
         logging.error(f"Error in batch_chat endpoint: {e}")
         return jsonify({"error": str(e)}), 500
+
+# @app.route('/test_response', methods=['GET'])
+# def test_response():
+#     """Test endpoint to verify response format"""
+#     test_data = [
+#         {"id": 1, "name": "Customer 1", "type": "customer"},
+#         {"id": 2, "name": "Customer 2", "type": "customer"}
+#     ]
+#     return jsonify({
+#         "type": "table",
+#         "content": test_data,
+#         "sql": "SELECT * FROM core_parties WHERE type = 'customer'",
+#         "conversation_count": 1
+#     })
+
+# @app.route('/test_frontend')
+# def test_frontend():
+#     """Serve the frontend debug test page"""
+#     return render_template('test_frontend.html')
 
 if __name__ == '__main__':
     # Clean up old images on startup

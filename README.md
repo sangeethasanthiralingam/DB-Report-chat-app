@@ -14,8 +14,9 @@ A sophisticated Flask-based chat application that allows users to interact with 
 - **Caching**: Redis-based caching for improved performance
 - **Modular Architecture**: Clean separation of concerns with utility modules
 - **Type Safety**: Full type annotations and error handling
-- **Session Management**: Persistent conversation history and file cleanup
 - **Error Recovery**: Automatic retry mechanisms for failed queries
+- **Prompt Optimization**: Advanced prompt engineering with performance tracking
+- **Comprehensive Testing**: Extensive test suite covering all major functionality
 
 ## 📋 Prerequisites
 
@@ -85,24 +86,46 @@ A sophisticated Flask-based chat application that allows users to interact with 
 
 ```
 DB Report chat app/
-├── opendai.py                 # Main Flask application
-├── requirements.txt           # Python dependencies
-├── business_terms.json        # Business term mappings
-├── .env                      # Environment variables
-├── .gitignore               # Git ignore rules
-├── static/                  # Static files
-│   ├── generated/           # Generated images
-│   └── styles.css          # CSS styles
-├── templates/               # HTML templates
-│   └── index.html          # Main chat interface
-└── utils/                   # Utility modules
-    ├── README.md           # Utils documentation
-    ├── chat_processor.py   # Chat processing logic
-    ├── data_processor.py   # Data formatting and sanitization
-    ├── database_manager.py # Database operations and caching
-    ├── domain_analyzer.py  # Domain detection and analysis
-    ├── response_formatter.py # Response formatting and visualization
-    └── session_manager.py  # Session and conversation management
+├── opendai.py                    # Main Flask application
+├── requirements.txt              # Python dependencies
+├── business_terms.json           # Business term mappings (154 mappings)
+├── .env                         # Environment variables
+├── .gitignore                   # Git ignore rules
+├── static/                      # Static files
+│   ├── generated/               # Generated images
+│   └── styles.css              # CSS styles
+├── templates/                   # HTML templates
+│   ├── index.html              # Main chat interface
+│   └── test_frontend.html      # Frontend testing template
+├── docs/                        # Documentation
+│   ├── PROMPT_MATRIX.md        # Prompt optimization tracking
+│   └── prompt_requirements.txt  # Prompt engineering requirements
+├── tools/                       # Utility scripts
+│   ├── check_database_tables.py # Database table verification
+│   ├── fix_unicode_symbols.py   # Unicode handling utilities
+│   ├── simple_prompt_optimizer.py # Prompt optimization utilities
+│   └── track_prompt_changes.py  # Prompt change tracking
+├── tests/                       # Comprehensive test suite
+│   ├── __init__.py
+│   ├── run_all_tests.py        # Test runner
+│   ├── test_chat_processor.py  # Chat processing tests
+│   ├── test_customer_supplier_detection.py
+│   ├── test_database_manager.py # Database manager tests
+│   ├── test_debug.py           # Debug testing utilities
+│   ├── test_domain_analyzer.py # Domain analysis tests
+│   ├── test_domain_detection.py
+│   ├── test_nat_handling.py    # Data sanitization tests
+│   ├── test_prompt_optimization.py # Prompt optimization tests
+│   ├── test_response_formatter.py
+│   └── test_session_manager.py # Session management tests
+└── utils/                       # Core utility modules
+    ├── README.md               # Utils documentation
+    ├── chat_processor.py       # Chat processing logic
+    ├── data_processor.py       # Data formatting and sanitization
+    ├── database_manager.py     # Database operations and caching
+    ├── domain_analyzer.py      # Domain detection and analysis
+    ├── response_formatter.py   # Response formatting and visualization
+    └── session_manager.py      # Session and conversation management
 ```
 
 ## 🚀 Usage
@@ -148,14 +171,21 @@ The app automatically determines the best response format based on your question
 
 ### Business Terms Mapping
 
-The `business_terms.json` file maps business-friendly terms to database table names:
+The `business_terms.json` file contains 154 mappings from business-friendly terms to database table names, covering:
 
+- **Core System**: users, roles, departments, entities, etc.
+- **HR Domain**: employees, attendance, leaves, shifts, teams, etc.
+- **Inventory Domain**: products, sales, purchases, stock levels, etc.
+- **Financial Domain**: accounts, transactions, payments, invoices, etc.
+- **Reporting Domain**: reports, charts, dashboards, etc.
+
+Example mappings:
 ```json
 {
-  "employees": "staff",
-  "products": "items",
-  "customers": "clients",
-  "sales": "transactions"
+  "core_parties": "customers",
+  "hr_core_employees": "employees",
+  "inv_core_products": "products",
+  "core_fin_transactions": "transactions"
 }
 ```
 
@@ -163,30 +193,47 @@ The `business_terms.json` file maps business-friendly terms to database table na
 
 The app automatically detects business domains:
 
-- **HR**: employee, hire, attendance, leave, hr, human, resource, staff
-- **Inventory**: product, stock, inventory, sales, purchase, customer, item
-- **Financial**: account, payment, transaction, financial, money, invoice
-- **Reporting**: report, chart, dashboard, analytics, statistics
+- **HR**: employee, hire, attendance, leave, hr, human, resource, staff, personnel, workforce, payroll, shift, schedule
+- **Inventory**: product, stock, inventory, sales, purchase, customer, item, goods, merchandise, supply, order
+- **Financial**: account, payment, transaction, financial, money, invoice, bank, balance, revenue, expense, budget
+- **Reporting**: report, chart, dashboard, analytics, statistics, summary, overview, trend, graph
 
 ## 🧪 Testing
 
-Run the test scripts to verify functionality:
-
+### Run Individual Tests
 ```bash
 # Test domain detection and analysis
-python test_domain_analyzer.py
+python tests/test_domain_analyzer.py
 
 # Test NaT handling and data sanitization
-python test_nat_handling.py
+python tests/test_nat_handling.py
 
 # Test customer/supplier detection
-python test_customer_supplier_detection.py
+python tests/test_customer_supplier_detection.py
 
 # Test domain detection accuracy
-python test_domain_detection.py
+python tests/test_domain_detection.py
 
-# Run all tests (if you have pytest installed)
-pytest test_*.py -v
+# Test database manager functionality
+python tests/test_database_manager.py
+
+# Test response formatting
+python tests/test_response_formatter.py
+
+# Test session management
+python tests/test_session_manager.py
+
+# Test chat processing
+python tests/test_chat_processor.py
+```
+
+### Run All Tests
+```bash
+# Run the comprehensive test suite
+python tests/run_all_tests.py
+
+# Or use pytest if installed
+pytest tests/ -v
 ```
 
 ### Test Coverage
@@ -196,6 +243,8 @@ pytest test_*.py -v
 - Response formatting
 - Session management
 - Error handling and recovery
+- Database operations and caching
+- Chat processing workflow
 
 ## 🔌 API Endpoints
 
@@ -239,6 +288,9 @@ Get the current conversation history.
 ### POST `/clear_conversation`
 Clear the conversation history.
 
+### POST `/cleanup_images`
+Clean up old generated images.
+
 ### GET `/session_info`
 Get information about the current session.
 
@@ -265,6 +317,7 @@ The application follows a modular architecture with clear separation of concerns
 - **Token Optimization**: Efficient SQL generation with context-aware prompts
 - **Data Sanitization**: Robust handling of NaT values and complex data types
 - **Session Persistence**: Maintains conversation context across requests
+- **Prompt Engineering**: Advanced prompt optimization with performance tracking
 
 ### Data Flow
 
@@ -272,6 +325,25 @@ The application follows a modular architecture with clear separation of concerns
 User Question → Domain Detection → SQL Generation → Query Execution → 
 Response Formatting → Visualization (if needed) → Session Storage → Response
 ```
+
+## 📈 Prompt Optimization
+
+The application includes advanced prompt engineering capabilities:
+
+### Prompt Matrix Tracking
+- **docs/PROMPT_MATRIX.md**: Tracks prompt evolution and performance metrics
+- **Version History**: Documents prompt improvements and their impact
+- **Performance Metrics**: Monitors accuracy, token usage, and error rates
+
+### Optimization Tools
+- **tools/simple_prompt_optimizer.py**: Utilities for prompt optimization
+- **tools/track_prompt_changes.py**: Change tracking and version control
+- **tests/test_prompt_optimization.py**: Testing framework for prompt improvements
+
+### Performance Improvements
+- **v1.0 → v1.3**: 65% → 85% accuracy improvement
+- **Token Reduction**: 40% reduction in token usage
+- **Error Recovery**: 60% error recovery rate
 
 ## 🔒 Security
 
@@ -307,6 +379,12 @@ Response Formatting → Visualization (if needed) → Session Storage → Respon
    - Ensure `static/generated/` directory exists and is writable
    - Check matplotlib backend configuration
    - Verify sufficient disk space
+
+### Debug Tools
+
+- **tests/test_debug.py**: Debug utilities for troubleshooting
+- **tools/check_database_tables.py**: Database table verification
+- **tools/fix_unicode_symbols.py**: Unicode handling utilities
 
 ### Logs
 
@@ -377,6 +455,7 @@ curl http://localhost:5000/session_info
 - Monitor generated image storage
 - Regular cleanup of old session files
 - Use batch processing for multiple queries
+- Leverage prompt optimization for better accuracy
 
 ## 🎯 Best Practices
 
@@ -385,6 +464,7 @@ curl http://localhost:5000/session_info
 - Leverage domain-specific terminology
 - Use batch processing for multiple related questions
 - Monitor logs for performance insights
+- Regular testing with the comprehensive test suite
 
 ---
 

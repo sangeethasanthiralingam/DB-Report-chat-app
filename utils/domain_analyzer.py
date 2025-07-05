@@ -35,6 +35,10 @@ class DomainAnalyzer:
         self.table_map = {k.lower(): v.lower() for k, v in self.business_terms.items()}
         self.reverse_table_map = {v.lower(): k.lower() for k, v in self.business_terms.items()}
         
+        # Special handling for core_parties which can represent both customers and suppliers
+        self.reverse_table_map['suppliers'] = 'core_parties'
+        self.reverse_table_map['supplier'] = 'core_parties'
+        
         # Domain classification
         self.domain_tables = defaultdict(set)
         for table in self.business_terms.keys():
@@ -64,6 +68,10 @@ class DomainAnalyzer:
                     self.keyword_index[word[:-1]].add(table.lower())
                 else:
                     self.keyword_index[word + 's'].add(table.lower())
+        
+        # Special handling for suppliers
+        self.keyword_index['suppliers'].add('core_parties')
+        self.keyword_index['supplier'].add('core_parties')
     
     def _classify_domain(self, table_name: str) -> str:
         """Classify table into domain based on naming patterns."""

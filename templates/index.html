@@ -15,6 +15,7 @@
             <h5 class="mb-0"><i class="bi bi-database"></i> Database Analytics Chat</h5>
             <div class="conversation-controls">
                 <button class="clear-conversation-btn" onclick="clearConversation()">Clear Conversation</button>
+                <!-- <button class="test-response-btn" onclick="testResponse()" style="margin-left: 10px;">Test Response</button> -->
             </div>
             <div class="conversation-count">Conversation count: <span id="conversationCount">0</span></div>
         </div>
@@ -154,34 +155,54 @@
                     question: message
                 })
             })
-                .then(response => response.json())
+                .then(response => {
+                    console.log('Response status:', response.status);
+                    console.log('Response headers:', response.headers);
+                    return response.json();
+                })
                 .then(data => {
+                    console.log('Response data:', data);
+                    
                     // Hide loading indicator
                     document.getElementById('loading').style.display = 'none';
 
+                    // Validate response data
+                    if (!data) {
+                        console.error('No data received');
+                        addBotMessage("Sorry, no response received from the server.");
+                        return;
+                    }
+
                     // Handle different response types
+                    console.log('About to handle response type:', data.type);
                     switch (data.type) {
                         case 'text':
+                            console.log('Handling text response');
                             addBotMessage(data.content);
                             break;
 
                         case 'card':
+                            console.log('Handling card response');
                             showCards(data.content);
                             break;
 
                         case 'table':
+                            console.log('Handling table response - calling showTable');
                             showTable(data.content);
                             break;
 
                         case 'chart':
+                            console.log('Handling chart response');
                             showChart(data.content, data.chart_type, data.data_preview);
                             break;
 
                         case 'diagram':
+                            console.log('Handling diagram response');
                             showDiagram(data.content, data.title);
                             break;
 
                         default:
+                            console.warn('Unknown response type:', data.type);
                             addBotMessage(data.content || "I couldn't process your request.");
                     }
 
@@ -200,9 +221,9 @@
                     scrollToBottom();
                 })
                 .catch(error => {
-                    console.error('Error:', error);
+                    console.error('Fetch error:', error);
                     document.getElementById('loading').style.display = 'none';
-                    addBotMessage("Sorry, there was an error processing your request.");
+                    addBotMessage("Sorry, there was an error processing your request. Please try again.");
                     scrollToBottom();
                 });
         }
@@ -343,7 +364,10 @@
 
         // Show data table
         function showTable(data) {
+            console.log('showTable called with data:', data);
+            
             if (!data || data.length === 0) {
+                console.log('No data to display');
                 addBotMessage("No data found.");
                 return;
             }
@@ -354,6 +378,7 @@
 
             // Get column names
             const columns = Object.keys(data[0]);
+            console.log('Table columns:', columns);
 
             // Build table HTML
             let tableHtml = '<table class="data-table"><thead><tr>';
@@ -363,7 +388,8 @@
             tableHtml += '</tr></thead><tbody>';
 
             // Add rows
-            data.forEach(row => {
+            data.forEach((row, index) => {
+                console.log(`Row ${index}:`, row);
                 tableHtml += '<tr>';
                 columns.forEach(col => {
                     tableHtml += `<td>${row[col] !== null ? row[col] : 'NULL'}</td>`;
@@ -381,7 +407,9 @@
                 <div class="message-time">${timeString}</div>
             `;
 
+            console.log('Adding table to chat body');
             chatBody.appendChild(messageDiv);
+            console.log('Table added successfully');
         }
 
         // Show chart
@@ -519,6 +547,56 @@
                     addBotMessage("Sorry, there was an error clearing the conversation.");
                 });
         }
+
+        // Test response format
+        // function testResponse() {
+        //     console.log('Testing response format...');
+        //     fetch('/test_response')
+        //         .then(response => response.json())
+        //         .then(data => {
+        //             console.log('Test response data:', data);
+        //             
+        //             // Handle different response types
+        //             switch (data.type) {
+        //                 case 'text':
+        //                     addBotMessage(data.content);
+        //                     break;
+        //                 case 'card':
+        //                     showCards(data.content);
+        //                     break;
+        //                 case 'table':
+        //                     showTable(data.content);
+        //                     break;
+        //                 case 'chart':
+        //                     showChart(data.content, data.chart_type, data.data_preview);
+        //                     break;
+        //                 case 'diagram':
+        //                     showDiagram(data.content, data.title);
+        //                     break;
+        //                 default:
+        //                     console.warn('Unknown response type:', data.type);
+        //                     addBotMessage(data.content || "I couldn't process your request.");
+        //             }
+
+        //             // Add SQL info if available
+        //             if (data.sql) {
+        //                 addSqlInfo(data.sql);
+        //             }
+
+        //             // Update conversation count
+        //             if (data.conversation_count !== undefined) {
+        //                 conversationHistory.length = data.conversation_count;
+        //                 updateConversationCount();
+        //             }
+
+        //             // Scroll to bottom
+        //             scrollToBottom();
+        //         })
+        //         .catch(error => {
+        //             console.error('Test response error:', error);
+        //             addBotMessage("Sorry, there was an error testing the response.");
+        //         });
+        // }
     </script>
 </body>
 

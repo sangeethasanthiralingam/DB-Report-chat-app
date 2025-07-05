@@ -3,7 +3,6 @@ import time
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional, List, Set
 from collections import defaultdict
 import pymysql
 from pymysql.cursors import DictCursor
@@ -420,32 +419,31 @@ def generate_table_schema_diagram(table_name, database=None):
         return None
 
 def format_compact_schema(schema_info):
-    """Format schema in compact, token-efficient way"""
+    """Format schema in ultra-compact, token-efficient way"""
     compact = []
     
     for table_name, table_info in schema_info['tables'].items():
-        # Compact column representation
+        # Ultra-compact column representation
         cols = []
         for col in table_info['columns']:
-            col_str = f"{col['name']}({col['type'][:10]})"  # Truncate type
+            col_type = col['type'][:5]  # Truncate type to 5 chars
+            col_str = f"{col['name']}:{col_type}"
             if col['primary_key']:
-                col_str += "*PK"
-            if not col['nullable']:
-                col_str += "!NULL"
+                col_str += "*"
             cols.append(col_str)
         
-        # Add foreign keys inline
+        # Only include essential foreign keys
         fks = []
-        for fk in table_info['foreign_keys']:
+        for fk in table_info['foreign_keys'][:2]:  # Limit to 2 FKs per table
             fks.append(f"{fk['constrained_columns'][0]}→{fk['referred_table']}")
         
-        table_compact = f"{table_name}[{','.join(cols)}]"
+        table_compact = f"{table_name}({','.join(cols)})"
         if fks:
-            table_compact += f"FK:{','.join(fks)}"
+            table_compact += f"|{','.join(fks)}"
         
         compact.append(table_compact)
     
-    return "\n".join(compact)
+    return "|".join(compact)
 
 def generate_domain_specific_prompt(question, schema_info, relevant_tables, domain=None):
     from utils.domain_analyzer import get_domain_analyzer
@@ -456,25 +454,21 @@ def generate_domain_specific_prompt(question, schema_info, relevant_tables, doma
         domain = domain_analyzer.identify_business_domain_from_schema(schema_info)
     
     domain_info = domain_analyzer.get_domain_prompt_context(domain)
-    base_prompt = f"""
-    You are an expert SQL analyst for a {domain} system.
-    {domain_info.get('context', '')}
     
-    IMPORTANT: Use ONLY the actual table names and column names from the schema below. Do NOT use placeholder names like 'your_table_name' or 'table_name'.
-    
-    Schema (compact format):
-    {format_compact_schema({
+    # Ultra-compact schema format
+    compact_schema = format_compact_schema({
         "tables": {t: schema_info['tables'][t] for t in relevant_tables if t in schema_info['tables']}
-        # relationships omitted for token efficiency
-    })}
+    })
     
-    Common patterns for this domain:
-    {chr(10).join(domain_info.get('common_patterns', []))}
+    # Minimal domain context
+    domain_context = domain_info.get('context', '').split('.')[0] if domain_info.get('context') else f'{domain} system'
     
-    Question: \"{question}\"
+    # Optimized prompt - clear SQL generation instruction
+    base_prompt = f"""Generate SQL query for {domain_context}
+Schema: {compact_schema}
+Question: {question}
+Output only the SQL:"""
     
-    Use only the schema above. Output only the SQL query with actual table and column names.
-    """
     return base_prompt
 
 def generate_sql(question, schema, database, error_context=None):
@@ -509,7 +503,12 @@ def generate_sql_token_optimized(question, database=None, error_context=None):
     relevant_tables = domain_analyzer.find_relevant_tables(question)
     relevant_columns = defaultdict(set)  # We don't need column-level matching for now
     
+    # Validate that found tables actually exist in the database
+    available_tables = set(schema_info['tables'].keys())
+    relevant_tables = {table for table in relevant_tables if table in available_tables}
+    
     logging.info(f"[DEBUG] Relevant tables found: {relevant_tables}")
+    logging.info(f"[DEBUG] Available tables in database: {list(available_tables)[:10]}...")  # Show first 10 tables
     
     # Debug: Check if analyzer is working correctly
     logging.info(f"[DEBUG] Analyzer business terms sample: {list(domain_analyzer.business_terms.items())[:3]}")
@@ -520,8 +519,20 @@ def generate_sql_token_optimized(question, database=None, error_context=None):
         logging.info(f"[DEBUG] No relevant tables found, searching for {domain} domain tables")
         # Get all tables from the schema
         all_tables = list(schema_info['tables'].keys())
-        relevant_tables = domain_analyzer.get_fallback_tables_for_domain(domain, all_tables)
+        fallback_tables = domain_analyzer.get_fallback_tables_for_domain(domain, all_tables)
+        # Ensure fallback tables exist in the database
+        relevant_tables = {table for table in fallback_tables if table in available_tables}
         logging.info(f"[DEBUG] Found {domain} domain tables: {relevant_tables}")
+    
+    # Final fallback: if still no tables, use first few available tables
+    if not relevant_tables:
+        logging.info(f"[DEBUG] No domain-specific tables found, using general fallback")
+        common_tables = ['employees', 'products', 'sales', 'payments', 'users', 'accounts', 'customers']
+        relevant_tables = {table for table in common_tables if table in available_tables}
+        if not relevant_tables:
+            # Last resort: use first 3 available tables
+            relevant_tables = set(list(available_tables)[:3])
+        logging.info(f"[DEBUG] Using fallback tables: {relevant_tables}")
     
     try:
         domain_prompt = generate_domain_specific_prompt(question, schema_info, relevant_tables, domain)
@@ -531,23 +542,16 @@ def generate_sql_token_optimized(question, database=None, error_context=None):
             domain_prompt += f"\nThe previously generated query failed with the error: \"{error_context}\".\n"
         prompt = domain_prompt
     except Exception as e:
-        # Fallback to original prompt if domain-specific fails
-        schema_prompt = "Schema (compact format):\n"
+        # Fallback to ultra-compact prompt if domain-specific fails
         compact_schema = format_compact_schema({
             "tables": {t: schema_info['tables'][t] for t in relevant_tables if t in schema_info['tables']}
-            # relationships omitted for token efficiency
         })
-        schema_prompt += compact_schema
-        context_prompt = f"\n{conversation_context}\n" if conversation_context else ""
-        error_feedback_prompt = f"\nThe previously generated query failed with the error: \"{error_context}\".\n" if error_context else ""
-        prompt = f"""
-        You are an expert SQL analyst.
-        {schema_prompt}
-        {context_prompt}
-        {error_feedback_prompt}
-        For the following question: \"{question}\"
-        Use only the schema above. Output only the SQL query.
-        """
+        context_prompt = f"\nContext: {conversation_context}" if conversation_context else ""
+        error_prompt = f"\nError: {error_context}" if error_context else ""
+        prompt = f"""Generate SQL query
+Schema: {compact_schema}{context_prompt}{error_prompt}
+Question: {question}
+Output only the SQL:"""
     # --- LLM Result Caching ---
     llm_cache_key = f"llm_sql_{hash(question + json.dumps(list(relevant_tables)))}_{database or 'default'}"
     cached_sql = redis_get(llm_cache_key)
@@ -569,9 +573,20 @@ def generate_sql_token_optimized(question, database=None, error_context=None):
         elif sql.startswith("```"):
             sql = sql[3:-3].strip()
         
-        # Validate SQL - check for placeholder values
+        # Validate SQL - check for placeholder values and conversational responses
         if any(placeholder in sql.lower() for placeholder in ['your_table_name', 'your_column_name', 'table_name', 'column_name']):
             logging.error(f"SQL contains placeholder values: {sql}")
+            return None
+        
+        # Check for conversational responses instead of SQL
+        conversational_indicators = [
+            'hello', 'hi', 'greeting', 'thank you', 'thanks', 
+            'i can help', 'i understand', 'let me', 'here is',
+            'the answer is', 'based on', 'according to'
+        ]
+        
+        if any(indicator in sql.lower() for indicator in conversational_indicators):
+            logging.error(f"Received conversational response instead of SQL: {sql}")
             return None
             
         if not sql.startswith("--ERROR"):

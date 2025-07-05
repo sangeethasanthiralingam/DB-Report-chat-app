@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frontend Debug Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        button { padding: 10px 15px; margin: 5px; }
+        .result { margin: 10px 0; padding: 10px; background: #f5f5f5; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>Frontend Debug Test</h1>
+    
+    <div class="test-section">
+        <h3>Test 1: Simple Response Endpoint</h3>
+        <button onclick="testSimpleResponse()">Test Simple Response</button>
+        <div id="simple-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Test 2: Chat Endpoint</h3>
+        <button onclick="testChatResponse()">Test Chat Response</button>
+        <div id="chat-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Test 3: Manual Table Display</h3>
+        <button onclick="testTableDisplay()">Test Table Display</button>
+        <div id="table-result" class="result"></div>
+    </div>
+
+    <script>
+        function testSimpleResponse() {
+            console.log('Testing simple response...');
+            const resultDiv = document.getElementById('simple-result');
+            resultDiv.innerHTML = 'Loading...';
+            
+            fetch('/test_response')
+                .then(response => {
+                    console.log('Response status:', response.status);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Simple response data:', data);
+                    resultDiv.innerHTML = `
+                        <h4>Success!</h4>
+                        <p><strong>Type:</strong> ${data.type}</p>
+                        <p><strong>Content:</strong> ${JSON.stringify(data.content)}</p>
+                        <p><strong>SQL:</strong> ${data.sql}</p>
+                    `;
+                })
+                .catch(error => {
+                    console.error('Simple response error:', error);
+                    resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+                });
+        }
+        
+        function testChatResponse() {
+            console.log('Testing chat response...');
+            const resultDiv = document.getElementById('chat-result');
+            resultDiv.innerHTML = 'Loading...';
+            
+            fetch('/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    question: 'Show me all customers'
+                })
+            })
+            .then(response => {
+                console.log('Chat response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Chat response data:', data);
+                resultDiv.innerHTML = `
+                    <h4>Success!</h4>
+                    <p><strong>Type:</strong> ${data.type}</p>
+                    <p><strong>Content Length:</strong> ${Array.isArray(data.content) ? data.content.length : 'Not array'}</p>
+                    <p><strong>SQL:</strong> ${data.sql}</p>
+                    <p><strong>Conversation Count:</strong> ${data.conversation_count}</p>
+                `;
+            })
+            .catch(error => {
+                console.error('Chat response error:', error);
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            });
+        }
+        
+        function testTableDisplay() {
+            console.log('Testing table display...');
+            const resultDiv = document.getElementById('table-result');
+            
+            // Test data
+            const testData = [
+                {"id": 1, "name": "Customer 1", "type": "customer"},
+                {"id": 2, "name": "Customer 2", "type": "customer"}
+            ];
+            
+            console.log('Test data:', testData);
+            
+            if (!testData || testData.length === 0) {
+                resultDiv.innerHTML = '<p>No data to display</p>';
+                return;
+            }
+            
+            const columns = Object.keys(testData[0]);
+            console.log('Columns:', columns);
+            
+            let tableHtml = '<table><thead><tr>';
+            columns.forEach(col => {
+                tableHtml += `<th>${col}</th>`;
+            });
+            tableHtml += '</tr></thead><tbody>';
+            
+            testData.forEach((row, index) => {
+                console.log(`Row ${index}:`, row);
+                tableHtml += '<tr>';
+                columns.forEach(col => {
+                    tableHtml += `<td>${row[col] !== null ? row[col] : 'NULL'}</td>`;
+                });
+                tableHtml += '</tr>';
+            });
+            
+            tableHtml += '</tbody></table>';
+            
+            resultDiv.innerHTML = `
+                <h4>Table Display Test</h4>
+                <p>Data rows: ${testData.length}</p>
+                <p>Columns: ${columns.join(', ')}</p>
+                ${tableHtml}
+            `;
+            
+            console.log('Table HTML generated successfully');
+        }
+    </script>
+</body>
+</html> 
