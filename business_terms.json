@@ -27,7 +27,7 @@
     "core_notes": "notes",
     "core_org_levels": "org_levels",
     "core_organization_hierarchies": "organization_hierarchies",
-    "core_parties": "parties",
+    "core_parties": "customers",
     "core_payments_card": "payments_card",
     "core_persons": "persons",
     "core_processes": "processes",
@@ -109,6 +109,7 @@
     "inv_core_manufacturers": "manufacturers",
     "inv_core_price_groups": "price_groups",
     "inv_core_product_attributes": "product_attributes",
+    "inv_core_product_batch_attributes": "product_batch_attributes",
     "inv_core_product_batches": "product_batches",
     "inv_core_product_categories": "product_categories",
     "inv_core_product_images": "product_images",
@@ -150,4 +151,4 @@
     "report_dashboards": "dashboards",
     "report_types": "report_types",
     "reports": "reports"
-} 
+}

@@ -23,12 +23,32 @@ import hashlib
 import inspect
 import re
 from collections import defaultdict
+from rapidfuzz import fuzz
 
 load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
+
+# Custom JSON encoder to handle pandas NaT values
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if pd.isna(obj):  # Handle NaT and NaN values
+            return None
+        elif hasattr(obj, 'isoformat'):  # Handle datetime objects
+            return obj.isoformat()
+        return super().default(obj)
+
+# Configure Flask JSON handling - use try/except for compatibility
+try:
+    # For newer Flask versions
+    app.json_provider_class = type('CustomJSONProvider', (app.json_provider_class,), {
+        'default': lambda self, obj: CustomJSONEncoder().default(obj)
+    })
+except:
+    # If JSON encoder configuration fails, NaT values will be handled in add_to_conversation_history
+    pass
 
 # Configure Flask-Session
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-this')
@@ -111,10 +131,25 @@ def add_to_conversation_history(question, response_obj, sql_query=""):
     if 'conversation_history' not in session:
         session['conversation_history'] = []
     
+    # Clean response_obj to handle NaT values
+    def clean_for_json(obj):
+        if isinstance(obj, dict):
+            return {k: clean_for_json(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [clean_for_json(item) for item in obj]
+        elif pd.isna(obj):  # Handle NaT and NaN values
+            return None
+        elif hasattr(obj, 'isoformat'):  # Handle datetime objects
+            return obj.isoformat()
+        else:
+            return obj
+    
+    cleaned_response = clean_for_json(response_obj)
+    
     session['conversation_history'].append({
         'timestamp': datetime.now().isoformat(),
         'question': question,
-        'response_obj': response_obj,
+        'response_obj': cleaned_response,
         'sql_query': sql_query,
         'database': DB_CONFIG['database']
     })
@@ -383,51 +418,174 @@ def get_database_schema(database=None):
         logging.error(f"Error getting schema: {e}")
         return None
 
+# Load business_terms.json as before
+with open(os.path.join(os.path.dirname(__file__), 'business_terms.json'), 'r', encoding='utf-8') as f:
+    business_terms = json.load(f)
+
+class SchemaAnalyzer:
+    def __init__(self, business_terms):
+        self.business_terms = business_terms
+        self._build_indexes()
+        
+    def _build_indexes(self):
+        """Build optimized indexes for quick lookup"""
+        # Table name to business name mapping
+        self.table_map = {k.lower(): v.lower() for k, v in self.business_terms.items()}
+        self.reverse_table_map = {v.lower(): k.lower() for k, v in self.business_terms.items()}
+        
+        # Domain classification
+        self.domain_tables = defaultdict(set)
+        for table in self.business_terms.keys():
+            domain = self._classify_domain(table)
+            self.domain_tables[domain].add(table.lower())
+        
+        # Build keyword index
+        self.keyword_index = defaultdict(set)
+        for table, business_name in self.business_terms.items():
+            # Add table name parts
+            for part in re.split(r'[_\s]', table.lower()):
+                if part and len(part) > 2:  # Ignore very short parts
+                    self.keyword_index[part].add(table.lower())
+            
+            # Add business name parts
+            for part in re.split(r'[_\s]', business_name.lower()):
+                if part and len(part) > 2:
+                    self.keyword_index[part].add(table.lower())
+            
+            # Add full names
+            self.keyword_index[table.lower()].add(table.lower())
+            self.keyword_index[business_name.lower()].add(table.lower())
+            
+            # Add singular/plural forms for key business terms
+            for word in [business_name.lower()]:
+                if word.endswith('s'):
+                    self.keyword_index[word[:-1]].add(table.lower())
+                else:
+                    self.keyword_index[word + 's'].add(table.lower())
+    
+    def _classify_domain(self, table_name):
+        """Classify table into domain based on naming patterns"""
+        table_lower = table_name.lower()
+        if table_lower.startswith('hr_') or 'employee' in table_lower:
+            return 'hr'
+        elif table_lower.startswith('inv_') or any(x in table_lower for x in ['product', 'stock', 'sales', 'purchase']):
+            return 'inventory'
+        elif table_lower.startswith('core_fin_') or any(x in table_lower for x in ['account', 'transaction', 'payment']):
+            return 'financial'
+        elif table_lower.startswith('report') or table_lower in ['reports', 'charts', 'dashboards']:
+            return 'reporting'
+        return 'core'
+
+    def find_relevant_tables(self, question, threshold=75):
+        """Find relevant tables using fuzzy matching and domain analysis"""
+        question_lower = question.lower()
+        matched_tables = set()
+        
+        # Add this debug line
+        logging.info(f"[DEBUG] Question words: {re.findall(r'\w{3,}', question_lower)}")
+        logging.info(f"[DEBUG] Available keywords: {list(self.keyword_index.keys())}")
+        
+        # 1. Exact matches in business terms
+        for term, tables in self.keyword_index.items():
+            if term in question_lower:
+                matched_tables.update(tables)
+        
+        # 2. Fuzzy matching for partial matches
+        words = re.findall(r'\w{3,}', question_lower)  # Get words with 3+ chars
+        for word in words:
+            for term in self.keyword_index.keys():
+                if fuzz.ratio(word, term) >= threshold:
+                    matched_tables.update(self.keyword_index[term])
+        
+        # 3. Domain analysis to expand results
+        domains_in_question = set()
+        for domain in self.domain_tables:
+            domain_words = domain.split('_')
+            if any(dw in question_lower for dw in domain_words):
+                domains_in_question.add(domain)
+        
+        for domain in domains_in_question:
+            matched_tables.update(self.domain_tables[domain])
+        
+        # Convert back to original table names
+        original_tables = set()
+        for table in matched_tables:
+            if table in self.reverse_table_map:
+                original_tables.add(self.reverse_table_map[table])
+            else:
+                # Handle case where we matched a business name directly
+                original_tables.add(table)
+        
+        logging.info(f"[DEBUG] Matched tables for question '{question}': {matched_tables}")
+        logging.info(f"[DEBUG] Keyword index: {self.keyword_index}")
+        return original_tables
+
+    def get_domain_context(self, domain):
+        """Get domain-specific context for SQL generation"""
+        contexts = {
+            'hr': {
+                'description': "HR Management System - Focus on employees, attendance, leaves, and payroll",
+                'common_joins': [
+                    "employees ↔ persons (employee details)",
+                    "employees ↔ departments (organization structure)",
+                    "attendance_records ↔ shifts (work schedules)",
+                    "leave_requests ↔ leave_types (time off)"
+                ],
+                'key_metrics': ["headcount", "attendance_rate", "leave_balance"]
+            },
+            'inventory': {
+                'description': "Inventory Management System - Focus on products, stock, sales, and purchases",
+                'common_joins': [
+                    "products ↔ product_categories (classification)",
+                    "sales ↔ sales_items (transaction details)",
+                    "stock_transactions ↔ products (inventory movement)"
+                ],
+                'key_metrics': ["stock_level", "sales_volume", "purchase_orders"]
+            },
+            'financial': {
+                'description': "Financial Management System - Focus on accounts, transactions, and payments",
+                'common_joins': [
+                    "transactions ↔ accounts (financial activity)",
+                    "payments ↔ invoices (settlements)",
+                    "transaction_categories ↔ transactions (classification)"
+                ],
+                'key_metrics': ["account_balance", "transaction_volume", "payment_status"]
+            },
+            'reporting': {
+                'description': "Reporting System - Focus on dashboards, charts, and analytics",
+                'common_joins': [
+                    "reports ↔ report_types (report classification)",
+                    "dashboard_tiles ↔ charts (visualizations)"
+                ],
+                'key_metrics': ["report_count", "dashboard_usage"]
+            }
+        }
+        return contexts.get(domain, {
+            'description': "Core System - General business operations",
+            'common_joins': [],
+            'key_metrics': []
+        })
+
+analyzer = SchemaAnalyzer(business_terms)
+import logging
+logging.info(f"[DEBUG] Analyzer initialized with {len(analyzer.business_terms)} business terms")
+logging.info(f"[DEBUG] Sample business terms: {list(analyzer.business_terms.items())[:5]}")
+logging.info(f"[DEBUG] Does analyzer have 'customers' mapping? {'customers' in [v.lower() for v in analyzer.business_terms.values()]}")
+
 def get_relevant_schema(question, database=None):
     """Get only relevant parts of schema based on question, using business_terms.json for keyword mapping"""
     full_schema = get_database_schema(database)
     if not full_schema:
         return None
 
-    # Load business terms mapping
-    business_terms_path = os.path.join(os.path.dirname(__file__), 'business_terms.json')
-    try:
-        with open(business_terms_path, 'r', encoding='utf-8') as f:
-            business_terms = json.load(f)
-    except Exception as e:
-        business_terms = {}
-
-    # Build reverse mapping: keyword -> [table_name]
-    keyword_to_tables = {}
-    for k, v in business_terms.items():
-        # Use both the key and value as possible keywords
-        keyword_to_tables.setdefault(k.lower(), set()).add(v)
-        keyword_to_tables.setdefault(v.lower(), set()).add(v)
-        # Also split key by underscores for more granular keywords
-        for part in k.lower().split('_'):
-            if part and part != v.lower():
-                keyword_to_tables.setdefault(part, set()).add(v)
-
-    # Extract potential table names from question
-    question_lower = question.lower()
-    relevant_tables = set()
-
-    # Check for explicit table mentions (by table name)
-    for table_name in full_schema['tables']:
-        if table_name.lower() in question_lower:
-            relevant_tables.add(table_name)
-
-    # If no specific tables mentioned, use business_terms keyword mapping
+    # Use SchemaAnalyzer for better table detection
+    relevant_tables = analyzer.find_relevant_tables(question)
+    logging.info(f"[DEBUG] Relevant tables for question '{question}': {relevant_tables}")
     if not relevant_tables:
-        for keyword, tables in keyword_to_tables.items():
-            if keyword in question_lower:
-                relevant_tables.update(t for t in tables if t in full_schema['tables'])
-
-    # If still no matches, include most commonly used tables (from business_terms values)
-    if not relevant_tables:
-        # Use the most common business terms as fallback
+        # Fallback to common tables
         common_tables = ['employees', 'products', 'sales', 'payments', 'users', 'accounts']
         relevant_tables = set(t for t in common_tables if t in full_schema['tables'])
+        logging.info(f"[DEBUG] Fallback relevant tables: {relevant_tables}")
 
     # Build filtered schema
     filtered_schema = {
@@ -462,9 +620,59 @@ def generate_sql_token_optimized(question, database=None, error_context=None):
     if not schema_info:
         return None
     conversation_context = get_conversation_context(limit=1, truncate=100)
-    relevant_tables, relevant_columns = extract_relevant_tables_columns(question, schema_info)
+    
+    # Step 1: Detect domain from the question first
+    question_lower = question.lower()
+    domain = 'general'  # default
+    
+    # Simple domain detection based on question keywords
+    logging.info(f"[DEBUG] Question lower: '{question_lower}'")
+    
+    if any(word in question_lower for word in ['employee', 'hire', 'attendance', 'leave', 'hr', 'human']):
+        domain = 'hr'
+        logging.info(f"[DEBUG] HR domain detected")
+    elif any(word in question_lower for word in ['product', 'stock', 'inventory', 'sales', 'purchase', 'customers']):
+        domain = 'inventory'
+        logging.info(f"[DEBUG] Inventory domain detected")
+    elif any(word in question_lower for word in ['account', 'payment', 'transaction', 'financial', 'money']):
+        domain = 'financial'
+        logging.info(f"[DEBUG] Financial domain detected")
+    elif any(word in question_lower for word in ['report', 'chart', 'dashboard']):
+        domain = 'reporting'
+        logging.info(f"[DEBUG] Reporting domain detected")
+    else:
+        logging.info(f"[DEBUG] No specific domain detected, using general")
+    
+    logging.info(f"[DEBUG] Domain detected from question '{question}': {domain}")
+    
+    # Step 2: Find relevant tables within the detected domain
+    relevant_tables = analyzer.find_relevant_tables(question)
+    relevant_columns = defaultdict(set)  # We don't need column-level matching for now
+    
+    logging.info(f"[DEBUG] Relevant tables found: {relevant_tables}")
+    
+    # Debug: Check if analyzer is working correctly
+    logging.info(f"[DEBUG] Analyzer business terms sample: {list(analyzer.business_terms.items())[:3]}")
+    logging.info(f"[DEBUG] Analyzer keyword index sample: {dict(list(analyzer.keyword_index.items())[:5])}")
+    
+    # If no relevant tables found, try to find tables based on the detected domain
+    if not relevant_tables and domain != 'general':
+        logging.info(f"[DEBUG] No relevant tables found, searching for {domain} domain tables")
+        # Get all tables from the schema
+        all_tables = list(schema_info['tables'].keys())
+        if domain == 'inventory':
+            # Look for inventory-related tables
+            inventory_tables = [t for t in all_tables if t.startswith('inv_')]
+            relevant_tables = set(inventory_tables[:3])  # Take first 3 inventory tables
+            logging.info(f"[DEBUG] Found inventory tables: {relevant_tables}")
+        elif domain == 'hr':
+            # Look for HR-related tables
+            hr_tables = [t for t in all_tables if t.startswith('hr_')]
+            relevant_tables = set(hr_tables[:3])  # Take first 3 HR tables
+            logging.info(f"[DEBUG] Found HR tables: {relevant_tables}")
+    
     try:
-        domain_prompt = generate_domain_specific_prompt(question, schema_info, relevant_tables)
+        domain_prompt = generate_domain_specific_prompt(question, schema_info, relevant_tables, domain)
         if conversation_context:
             domain_prompt += f"\n{conversation_context}\n"
         if error_context:
@@ -508,9 +716,18 @@ def generate_sql_token_optimized(question, database=None, error_context=None):
             sql = sql[6:-3].strip()
         elif sql.startswith("```"):
             sql = sql[3:-3].strip()
+        
+        # Validate SQL - check for placeholder values
+        if any(placeholder in sql.lower() for placeholder in ['your_table_name', 'your_column_name', 'table_name', 'column_name']):
+            logging.error(f"SQL contains placeholder values: {sql}")
+            return None
+            
         if not sql.startswith("--ERROR"):
             redis_set(llm_cache_key, sql, ex=LLM_CACHE_EXPIRY_SECONDS)
         logging.info(f"Token-optimized SQL generated in {time.time() - start_time:.4f} seconds.")
+        if not sql.strip().lower().startswith("select"):
+            logging.error(f"Refusing to execute non-SELECT statement: {sql}")
+            return None
         return sql if not sql.startswith("--ERROR") else None
     except Exception as e:
         logging.error(f"Error generating SQL (token-optimized): {e}")
@@ -1083,8 +1300,10 @@ def identify_business_domain(schema_info):
         return 'financial'
     return 'general'
 
-def generate_domain_specific_prompt(question, schema_info, relevant_tables, domain_context=None):
-    domain = identify_business_domain(schema_info)
+def generate_domain_specific_prompt(question, schema_info, relevant_tables, domain=None):
+    # Use the passed domain parameter, don't detect it again
+    if domain is None:
+        domain = identify_business_domain(schema_info)
     domain_prompts = {
         'hr': {
             'context': "This is an HR management system. Focus on employee, attendance, leave, and payroll data.",
@@ -1115,15 +1334,21 @@ def generate_domain_specific_prompt(question, schema_info, relevant_tables, doma
     base_prompt = f"""
     You are an expert SQL analyst for a {domain} system.
     {domain_info.get('context', '')}
+    
+    IMPORTANT: Use ONLY the actual table names and column names from the schema below. Do NOT use placeholder names like 'your_table_name' or 'table_name'.
+    
     Schema (compact format):
     {format_compact_schema({
         "tables": {t: schema_info['tables'][t] for t in relevant_tables if t in schema_info['tables']}
         # relationships omitted for token efficiency
     })}
+    
     Common patterns for this domain:
     {chr(10).join(domain_info.get('common_patterns', []))}
+    
     Question: \"{question}\"
-    Use only the schema above. Output only the SQL query.
+    
+    Use only the schema above. Output only the SQL query with actual table and column names.
     """
     return base_prompt
 
@@ -1196,7 +1421,8 @@ def validate_and_sanitize_results(df, question):
     # Handle data types for JSON serialization
     for col in df.columns:
         if df[col].dtype == 'datetime64[ns]':
-            df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+            # Handle NaT values in datetime columns
+            df[col] = df[col].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if pd.notna(x) else None)
         elif df[col].dtype == 'object':
             df[col] = df[col].astype(str)
     
@@ -1413,14 +1639,22 @@ def chat():
                     })
 
                 # Default to table for other cases
+                # Handle datetime serialization issues
+                try:
+                    content = df.to_dict(orient='records')
+                except Exception as e:
+                    logging.warning(f"Error converting DataFrame to dict: {e}")
+                    # Fallback: convert to string representation
+                    content = df.to_string(index=False)
+                
                 add_to_conversation_history(question, {
                     "type": "table",
-                    "content": df.to_dict(orient='records'),
+                    "content": content,
                     "sql": sql or ""
                 }, sql or "")
                 return jsonify({
                     "type": "table",
-                    "content": df.to_dict(orient='records'),
+                    "content": content,
                     "sql": sql,
                     "conversation_count": len(session.get('conversation_history', []))
                 })
