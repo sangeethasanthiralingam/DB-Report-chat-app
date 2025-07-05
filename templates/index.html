@@ -2,28 +2,30 @@
 <html>
 
 <head>
-    <title>Database Analytics Chat</title>
+    <title>Chat App</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='styles.css') }}" rel="stylesheet">
+    <!-- Chart.js for interactive charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head>
 
 <body>
     <div class="chat-container">
         <div class="chat-header">
-            <h5 class="mb-0"><i class="bi bi-database"></i> Database Analytics Chat</h5>
+            <h5 class="mb-0"><i class="bi bi-database"></i>Chat App</h5>
             <div class="conversation-controls">
-                <button class="clear-conversation-btn" onclick="clearConversation()">Clear Conversation</button>
+                <button class="clear-conversation-btn" onclick="clearConversation()">
+                    <i class="bi bi-trash"></i> Clear Chat
+                </button>
+                <span class="message-counter" id="messageCounter" title="Total messages">0</span>
             </div>
-            <div class="conversation-count">Conversation count: <span id="conversationCount">0</span></div>
         </div>
 
         <div class="chat-body" id="chatBody">
-            <div class="bot-message message">
-                <div>Hello! I'm your database analytics assistant. Ask me anything about your data.</div>
-                <div class="message-time">Just now</div>
-            </div>
+            <!-- Messages will be loaded here -->
         </div>
 
         <div class="loading" id="loading" style="display: none;">
@@ -43,10 +45,23 @@
     <script>
         // Global variables
         let conversationHistory = [];
+        let useInteractiveCharts = localStorage.getItem('useInteractiveCharts') === 'true'; // Toggle for chart mode
+        const DEV_MODE = false; // Set to true to show SQL preview and data preview
+
+        // Global error handler to catch unhandled errors
+        window.addEventListener('error', function(event) {
+            console.error('Global error caught:', event.error);
+        });
+
+        // Handle unhandled promise rejections
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('Unhandled promise rejection:', event.reason);
+        });
 
         // Initialize the app
         document.addEventListener('DOMContentLoaded', function () {
             loadConversationHistory();
+            console.log('Chart mode on load:', useInteractiveCharts ? 'Interactive' : 'Static');
 
             // Set up event listeners
             document.getElementById('userInput').addEventListener('keypress', function (e) {
@@ -62,7 +77,6 @@
                 .then(response => response.json())
                 .then(data => {
                     conversationHistory = data.conversation_history || [];
-                    updateConversationCount();
 
                     // Display conversation history
                     if (conversationHistory.length > 0) {
@@ -71,10 +85,14 @@
                         // Show welcome message if no history
                         addBotMessage("Hello! I'm your database analytics assistant. Ask me anything about your data.");
                     }
+                    
+                    // Update message counter after displaying
+                    updateMessageCounter();
                 })
                 .catch(error => {
                     console.error('Error loading conversation history:', error);
                     addBotMessage("Hello! I'm your database analytics assistant. Ask me anything about your data.");
+                    updateMessageCounter();
                 });
         }
 
@@ -107,24 +125,89 @@
                         default:
                             addBotMessage(resp.content || "I couldn't process your request.", conv.timestamp);
                     }
-                    if (resp.sql) {
-                        addSqlInfo(resp.sql);
-                    } else if (conv.sql_query) {
-                        addSqlInfo(conv.sql_query);
+                    if (DEV_MODE) {
+                        if (resp.sql) {
+                            addSqlInfo(resp.sql);
+                        } else if (conv.sql_query) {
+                            addSqlInfo(conv.sql_query);
+                        }
                     }
                 } else if (conv.response) {
                     // fallback for old history
                     addBotMessage(conv.response, conv.timestamp);
-                    if (conv.sql_query) {
+                    if (DEV_MODE && conv.sql_query) {
                         addSqlInfo(conv.sql_query);
                     }
                 }
             });
         }
 
-        // Update conversation count
-        function updateConversationCount() {
-            document.getElementById('conversationCount').textContent = conversationHistory.length;
+        // Update message counter
+        function updateMessageCounter() {
+            const chatBody = document.getElementById('chatBody');
+            const messages = chatBody.querySelectorAll('.message');
+            const counter = document.getElementById('messageCounter');
+            counter.textContent = messages.length;
+        }
+
+        // Clear conversation
+        function clearConversation() {
+            if (confirm('Are you sure you want to clear the entire conversation? This action cannot be undone.')) {
+                // Clear the chat body
+                const chatBody = document.getElementById('chatBody');
+                chatBody.innerHTML = '';
+                
+                // Clear conversation history
+                conversationHistory = [];
+                
+                // Clear from server
+                fetch('/clear_conversation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Conversation cleared:', data);
+                })
+                .catch(error => {
+                    console.error('Error clearing conversation:', error);
+                });
+                
+                // Add welcome message
+                addBotMessage("Hello! I'm your database analytics assistant. Ask me anything about your data.");
+                
+                // Update counter
+                updateMessageCounter();
+            }
+        }
+
+        // Check if message is a greeting
+        function isGreeting(message) {
+            const greetings = [
+                'hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening',
+                'morning', 'afternoon', 'evening', 'sup', 'what\'s up', 'howdy',
+                'greetings', 'salutations', 'yo', 'hi there', 'hello there',
+                'good day', 'good night', 'night', 'bye', 'goodbye', 'see you',
+                'take care', 'farewell', 'ciao', 'adios', 'au revoir'
+            ];
+            
+            const normalizedMessage = message.toLowerCase().trim();
+            return greetings.some(greeting => normalizedMessage.includes(greeting));
+        }
+
+        // Get greeting response
+        function getGreetingResponse() {
+            const responses = [
+                "Hello! How can I help you today?",
+                "Hi there! What would you like to know?",
+                "Hey! How can I assist you?",
+                "Greetings! How can I help you today?",
+                "Hello! What questions do you have?"
+            ];
+            
+            return responses[Math.floor(Math.random() * responses.length)];
         }
 
         // Send user message
@@ -137,6 +220,15 @@
             // Add user message to chat
             addUserMessage(message);
             input.value = '';
+
+            // Check if it's a greeting
+            if (isGreeting(message)) {
+                // Respond to greeting without calling AI
+                setTimeout(() => {
+                    addBotMessage(getGreetingResponse());
+                }, 500); // Small delay for natural feel
+                return;
+            }
 
             // Show loading indicator
             document.getElementById('loading').style.display = 'flex';
@@ -154,55 +246,75 @@
                     question: message
                 })
             })
-                .then(response => response.json())
+                .then(response => {
+                    console.log('Response status:', response.status);
+                    console.log('Response headers:', response.headers);
+                    return response.json();
+                })
                 .then(data => {
+                    console.log('Response data:', data);
+                    
                     // Hide loading indicator
                     document.getElementById('loading').style.display = 'none';
 
+                    // Validate response data
+                    if (!data) {
+                        console.error('No data received');
+                        addBotMessage("Sorry, no response received from the server.");
+                        return;
+                    }
+
                     // Handle different response types
+                    console.log('About to handle response type:', data.type);
                     switch (data.type) {
                         case 'text':
+                            console.log('Handling text response');
                             addBotMessage(data.content);
                             break;
 
                         case 'card':
+                            console.log('Handling card response');
                             showCards(data.content);
                             break;
 
                         case 'table':
+                            console.log('Handling table response - calling showTable');
                             showTable(data.content);
                             break;
 
                         case 'chart':
+                            console.log('Handling chart response');
                             showChart(data.content, data.chart_type, data.data_preview);
                             break;
 
                         case 'diagram':
+                            console.log('Handling diagram response');
                             showDiagram(data.content, data.title);
                             break;
 
                         default:
+                            console.warn('Unknown response type:', data.type);
                             addBotMessage(data.content || "I couldn't process your request.");
                     }
 
-                    // Add SQL info if available
-                    if (data.sql) {
+                    // Add SQL info if available (only in dev mode)
+                    if (DEV_MODE && data.sql) {
                         addSqlInfo(data.sql);
                     }
 
                     // Update conversation count
                     if (data.conversation_count !== undefined) {
                         conversationHistory.length = data.conversation_count;
-                        updateConversationCount();
+                        updateMessageCounter();
                     }
 
                     // Scroll to bottom
                     scrollToBottom();
                 })
                 .catch(error => {
-                    console.error('Error:', error);
+                    console.error('Fetch error:', error);
                     document.getElementById('loading').style.display = 'none';
-                    addBotMessage("Sorry, there was an error processing your request.");
+                    addBotMessage("Sorry, there was an error processing your request. Please try again.");
                     scrollToBottom();
                 });
         }
@@ -221,6 +333,7 @@
             `;
 
             chatBody.appendChild(messageDiv);
+            updateMessageCounter();
             scrollToBottom();
         }
 
@@ -257,6 +370,7 @@
             }
 
             chatBody.appendChild(messageDiv);
+            updateMessageCounter();
             scrollToBottom();
         }
 
@@ -339,11 +453,15 @@
             `;
 
             chatBody.appendChild(messageDiv);
+            updateMessageCounter();
         }
 
         // Show data table
         function showTable(data) {
+            console.log('showTable called with data:', data);
+            
             if (!data || data.length === 0) {
+                console.log('No data to display');
                 addBotMessage("No data found.");
                 return;
             }
@@ -354,16 +472,18 @@
 
             // Get column names
             const columns = Object.keys(data[0]);
+            console.log('Table columns:', columns);
 
             // Build table HTML
-            let tableHtml = '<table class="data-table"><thead><tr>';
+            let tableHtml = '<div class="table-container"><table class="data-table"><thead><tr>';
             columns.forEach(col => {
                 tableHtml += `<th>${col}</th>`;
             });
             tableHtml += '</tr></thead><tbody>';
 
             // Add rows
-            data.forEach(row => {
+            data.forEach((row, index) => {
+                console.log(`Row ${index}:`, row);
                 tableHtml += '<tr>';
                 columns.forEach(col => {
                     tableHtml += `<td>${row[col] !== null ? row[col] : 'NULL'}</td>`;
@@ -371,20 +491,31 @@
                 tableHtml += '</tr>';
             });
 
-            tableHtml += '</tbody></table>';
+            tableHtml += '</tbody></table></div>';
 
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message bot-message';
             messageDiv.innerHTML = `
                 <div>Query results:</div>
                 ${tableHtml}
+                <div class="table-controls">
+                    <button class="download-btn" onclick="downloadTableAsExcel(${JSON.stringify(data).replace(/"/g, '&quot;')})">
+                        <i class="bi bi-file-earmark-excel"></i> Download Excel
+                    </button>
+                    <button class="download-btn" onclick="downloadTableAsPDF(${JSON.stringify(data).replace(/"/g, '&quot;')})">
+                        <i class="bi bi-file-earmark-pdf"></i> Download PDF
+                    </button>
+                </div>
                 <div class="message-time">${timeString}</div>
             `;
 
+            console.log('Adding table to chat body');
             chatBody.appendChild(messageDiv);
+            console.log('Table added successfully');
+            updateMessageCounter();
         }
 
-        // Show chart
+        // Show chart (with option for interactive charts)
         function showChart(chartData, chartType, dataPreview) {
             const chatBody = document.getElementById('chatBody');
             const now = new Date();
@@ -393,31 +524,366 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message bot-message';
 
-            // If chartData looks like a filename (not base64), use static path
-            let imgSrc = '';
-            if (chartData && !chartData.startsWith('iVBOR') && !chartData.startsWith('/9j/')) {
-                imgSrc = `/static/generated/${chartData}`;
+            // Check if we should use interactive charts (you can toggle this)
+            // const useInteractiveCharts = false; // Set to true to use interactive charts
+
+            if (useInteractiveCharts && dataPreview && dataPreview.length > 0) {
+                // Create interactive chart using Chart.js
+                const chartId = 'chart_' + Date.now();
+                let chartHtml = `
+                    <div class="chart-container">
+                        <canvas id="${chartId}" width="400" height="200"></canvas>
+                    </div>
+                `;
+
+                messageDiv.innerHTML = `
+                    <div>Here's the interactive ${chartType} chart:</div>
+                    ${chartHtml}
+                    <div class="chart-controls">
+                        <button class="chart-mode-btn btn-success" onclick="toggleChartModeForChart(this, '${chartId}', '${chartType}', ${JSON.stringify(dataPreview).replace(/"/g, '&quot;')})">
+                            <i class="bi bi-image"></i> Switch to Static
+                        </button>
+                        <button class="download-btn" onclick="downloadChart('${chartId}', '${chartType}')">
+                            <i class="bi bi-download"></i> Download PNG
+                        </button>
+                    </div>
+                    <div class="message-time">${timeString}</div>
+                `;
+
+                chatBody.appendChild(messageDiv);
+
+                // Create the interactive chart
+                setTimeout(() => {
+                    createInteractiveChart(chartId, dataPreview, chartType);
+                }, 100);
             } else {
-                imgSrc = `data:image/png;base64,${chartData}`;
+                // Use static image (current behavior)
+                let imgSrc = '';
+                if (chartData && !chartData.startsWith('iVBOR') && !chartData.startsWith('/9j/')) {
+                    imgSrc = `/static/generated/${chartData}`;
+                } else {
+                    imgSrc = `data:image/png;base64,${chartData}`;
+                }
+
+                let chartHtml = `
+                    <div class="chart-container">
+                        <img class="chart-img" src="${imgSrc}" alt="Chart">
+                    </div>
+                `;
+
+                messageDiv.innerHTML = `
+                    <div>Here's the ${chartType} chart:</div>
+                    ${chartHtml}
+                    <div class="chart-controls">
+                        <button class="chart-mode-btn" onclick="toggleChartModeForChart(this, null, '${chartType}', ${JSON.stringify(dataPreview).replace(/"/g, '&quot;')})">
+                            <i class="bi bi-graph-up"></i> Switch to Interactive
+                        </button>
+                        <button class="download-btn" onclick="downloadChartImage('${chartData}')">
+                            <i class="bi bi-download"></i> Download PNG
+                        </button>
+                    </div>
+                    <div class="message-time">${timeString}</div>
+                `;
+
+                chatBody.appendChild(messageDiv);
             }
 
-            let chartHtml = `
-                <div class="chart-container">
-                    <img class="chart-img" src="${imgSrc}" alt="Chart">
-                </div>
-            `;
-
-            messageDiv.innerHTML = `
-                <div>Here's the ${chartType} chart:</div>
-                ${chartHtml}
-                <div class="message-time">${timeString}</div>
-            `;
-
-            chatBody.appendChild(messageDiv);
-
-            // Optionally show data preview
-            if (dataPreview && dataPreview.length > 0) {
+            // Optionally show data preview (only in dev mode)
+            if (DEV_MODE && dataPreview && dataPreview.length > 0) {
                 addBotMessage("Data preview: " + JSON.stringify(dataPreview));
+            }
+            updateMessageCounter();
+        }
+
+        // Toggle chart mode for a specific chart
+        function toggleChartModeForChart(button, chartId, chartType, dataPreview) {
+            const chartContainer = button.closest('.message');
+            const chartControls = button.closest('.chart-controls');
+            const chartContainerDiv = chartContainer.querySelector('.chart-container');
+            
+            if (useInteractiveCharts) {
+                // Switch from interactive to static
+                useInteractiveCharts = false;
+                localStorage.setItem('useInteractiveCharts', 'false');
+                
+                // Generate static chart image using the backend
+                generateStaticChart(chartType, dataPreview).then(imageData => {
+                    if (imageData) {
+                        chartContainerDiv.innerHTML = `
+                            <img class="chart-img" src="data:image/png;base64,${imageData}" alt="Chart">
+                        `;
+                        console.log('Static chart generated successfully');
+                        
+                        // Update chart controls to include download button
+                        const chartControls = button.closest('.chart-controls');
+                        chartControls.innerHTML = `
+                            <button class="chart-mode-btn" onclick="toggleChartModeForChart(this, null, '${chartType}', ${JSON.stringify(dataPreview).replace(/"/g, '&quot;')})">
+                                <i class="bi bi-graph-up"></i> Switch to Interactive
+                            </button>
+                            <button class="download-btn" onclick="downloadChartImage('${imageData}')">
+                                <i class="bi bi-download"></i> Download PNG
+                            </button>
+                        `;
+                    } else {
+                        // Fallback to a placeholder
+                        chartContainerDiv.innerHTML = `
+                            <div class="chart-placeholder">
+                                <p>Static chart generation failed. Please try again.</p>
+                            </div>
+                        `;
+                        console.warn('Static chart generation returned null');
+                    }
+                }).catch(error => {
+                    console.error('Error generating static chart:', error);
+                    chartContainerDiv.innerHTML = `
+                        <div class="chart-placeholder">
+                            <p>Error generating static chart. Please try again.</p>
+                        </div>
+                    `;
+                });
+                
+                // Update button
+                button.innerHTML = '<i class="bi bi-graph-up"></i> Switch to Interactive';
+                button.className = 'chart-mode-btn';
+                button.onclick = () => toggleChartModeForChart(button, null, chartType, dataPreview);
+                
+                console.log('Switched chart to static mode');
+            } else {
+                // Switch from static to interactive
+                useInteractiveCharts = true;
+                localStorage.setItem('useInteractiveCharts', 'true');
+                
+                // Remove image and create canvas
+                const newChartId = 'chart_' + Date.now();
+                chartContainerDiv.innerHTML = `<canvas id="${newChartId}" width="400" height="200"></canvas>`;
+                
+                // Update chart controls to include download button
+                const chartControls = button.closest('.chart-controls');
+                chartControls.innerHTML = `
+                    <button class="chart-mode-btn btn-success" onclick="toggleChartModeForChart(this, '${newChartId}', '${chartType}', ${JSON.stringify(dataPreview).replace(/"/g, '&quot;')})">
+                        <i class="bi bi-image"></i> Switch to Static
+                    </button>
+                    <button class="download-btn" onclick="downloadChart('${newChartId}', '${chartType}')">
+                        <i class="bi bi-download"></i> Download PNG
+                    </button>
+                `;
+                
+                // Create the interactive chart
+                setTimeout(() => {
+                    createInteractiveChart(newChartId, dataPreview, chartType);
+                }, 100);
+                
+                console.log('Switched chart to interactive mode');
+            }
+            updateMessageCounter();
+        }
+
+        // Toggle between static and interactive charts (global setting)
+        function toggleChartMode() {
+            useInteractiveCharts = !useInteractiveCharts;
+            localStorage.setItem('useInteractiveCharts', useInteractiveCharts.toString());
+            updateChartModeButton();
+        }
+
+        // Update chart mode button appearance (for global button - now removed)
+        function updateChartModeButton() {
+            // This function is kept for compatibility but no longer used
+            console.log('Global chart mode:', useInteractiveCharts ? 'Interactive' : 'Static');
+        }
+
+        // Download chart as PNG (for interactive charts)
+        function downloadChart(canvasId, chartType) {
+            const canvas = document.getElementById(canvasId);
+            if (canvas) {
+                const link = document.createElement('a');
+                link.download = `${chartType}_chart_${Date.now()}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            } else {
+                console.error('Canvas element not found');
+            }
+        }
+
+        // Download chart image (for static charts)
+        function downloadChartImage(imageData) {
+            if (imageData && !imageData.startsWith('iVBOR') && !imageData.startsWith('/9j/')) {
+                // It's a filename, download from server
+                const link = document.createElement('a');
+                link.download = imageData;
+                link.href = `/static/generated/${imageData}`;
+                link.click();
+            } else if (imageData) {
+                // It's base64 data
+                const link = document.createElement('a');
+                link.download = `chart_${Date.now()}.png`;
+                link.href = `data:image/png;base64,${imageData}`;
+                link.click();
+            }
+        }
+
+        // Download table as Excel
+        function downloadTableAsExcel(data) {
+            if (!data || data.length === 0) {
+                console.error('No data to download');
+                return;
+            }
+
+            // Create CSV content
+            const headers = Object.keys(data[0]);
+            const csvContent = [
+                headers.join(','),
+                ...data.map(row => headers.map(header => {
+                    const value = row[header];
+                    // Escape quotes and wrap in quotes if contains comma
+                    return typeof value === 'string' && value.includes(',') ? 
+                        `"${value.replace(/"/g, '""')}"` : value;
+                }).join(','))
+            ].join('\n');
+
+            // Create and download file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `table_data_${Date.now()}.csv`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
+        // Download table as PDF
+        function downloadTableAsPDF(data) {
+            if (!data || data.length === 0) {
+                console.error('No data to download');
+                return;
+            }
+
+            // Create a simple HTML table for PDF conversion
+            const headers = Object.keys(data[0]);
+            let tableHtml = `
+                <html>
+                <head>
+                    <style>
+                        table { border-collapse: collapse; width: 100%; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background-color: #f2f2f2; }
+                    </style>
+                </head>
+                <body>
+                    <h2>Data Export</h2>
+                    <table>
+                        <thead>
+                            <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>
+                            ${data.map(row => 
+                                `<tr>${headers.map(header => `<td>${row[header] || ''}</td>`).join('')}</tr>`
+                            ).join('')}
+                        </tbody>
+                    </table>
+                </body>
+                </html>
+            `;
+
+            // Use browser's print functionality to save as PDF
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(tableHtml);
+            printWindow.document.close();
+            printWindow.focus();
+            
+            // Wait for content to load then print
+            setTimeout(() => {
+                printWindow.print();
+                printWindow.close();
+            }, 500);
+        }
+
+        // Generate static chart by calling the backend
+        async function generateStaticChart(chartType, dataPreview) {
+            try {
+                const response = await fetch('/generate_static_chart', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        chart_type: chartType,
+                        data: dataPreview
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    return result.image_data;
+                } else {
+                    console.error('Failed to generate static chart:', response.status);
+                    return null;
+                }
+            } catch (error) {
+                console.error('Error calling generate_static_chart:', error);
+                return null;
+            }
+        }
+
+        // Create interactive chart using Chart.js
+        function createInteractiveChart(canvasId, data, chartType) {
+            try {
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) {
+                    console.error('Canvas element not found:', canvasId);
+                    return;
+                }
+                const ctx = canvas.getContext('2d');
+            
+            // Prepare data for Chart.js
+            const labels = data.map(row => {
+                const keys = Object.keys(row);
+                return keys.length > 0 ? row[keys[0]] : '';
+            });
+            
+            const values = data.map(row => {
+                const keys = Object.keys(row);
+                return keys.length > 1 ? parseFloat(row[keys[1]]) || 0 : 0;
+            });
+
+            const chartConfig = {
+                type: chartType === 'bar' ? 'bar' : 
+                      chartType === 'stack' ? 'bar' : 
+                      chartType === 'line' ? 'line' : 
+                      chartType === 'pie' ? 'pie' : 'scatter',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Data',
+                        data: values,
+                        backgroundColor: chartType === 'pie' ? 
+                            ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'] :
+                            'rgba(54, 162, 235, 0.2)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart`
+                        }
+                    },
+                    scales: chartType === 'stack' ? {
+                        x: {
+                            stacked: true
+                        },
+                        y: {
+                            stacked: true
+                        }
+                    } : {}
+                }
+            };
+
+            new Chart(ctx, chartConfig);
+            } catch (error) {
+                console.error('Error creating interactive chart:', error);
             }
         }
 
@@ -452,10 +918,13 @@
             `;
 
             chatBody.appendChild(messageDiv);
+            updateMessageCounter();
         }
 
         // Add SQL information
         function addSqlInfo(sql) {
+            if (!DEV_MODE) return; // Only show SQL in dev mode
+            
             const chatBody = document.getElementById('chatBody');
 
             const sqlDiv = document.createElement('div');
@@ -466,6 +935,7 @@
             `;
 
             chatBody.appendChild(sqlDiv);
+            updateMessageCounter();
             scrollToBottom();
         }
 
@@ -509,7 +979,7 @@
 
                     // Reset conversation history
                     conversationHistory = [];
-                    updateConversationCount();
+                    updateMessageCounter();
 
                     // Show welcome message
                     addBotMessage("Hello! I'm your database analytics assistant. Ask me anything about your data.");
@@ -519,6 +989,56 @@
                     addBotMessage("Sorry, there was an error clearing the conversation.");
                 });
         }
+
+        // Test response format
+        // function testResponse() {
+        //     console.log('Testing response format...');
+        //     fetch('/test_response')
+        //         .then(response => response.json())
+        //         .then(data => {
+        //             console.log('Test response data:', data);
+        //             
+        //             // Handle different response types
+        //             switch (data.type) {
+        //                 case 'text':
+        //                     addBotMessage(data.content);
+        //                     break;
+        //                 case 'card':
+        //                     showCards(data.content);
+        //                     break;
+        //                 case 'table':
+        //                     showTable(data.content);
+        //                     break;
+        //                 case 'chart':
+        //                     showChart(data.content, data.chart_type, data.data_preview);
+        //                     break;
+        //                 case 'diagram':
+        //                     showDiagram(data.content, data.title);
+        //                     break;
+        //                 default:
+        //                     console.warn('Unknown response type:', data.type);
+        //                     addBotMessage(data.content || "I couldn't process your request.");
+        //             }
+
+        //             // Add SQL info if available
+        //             if (data.sql) {
+        //                 addSqlInfo(data.sql);
+        //             }
+
+        //             // Update conversation count
+        //             if (data.conversation_count !== undefined) {
+        //                 conversationHistory.length = data.conversation_count;
+        //                 updateConversationCount();
+        //             }
+
+        //             // Scroll to bottom
+        //             scrollToBottom();
+        //         })
+        //         .catch(error => {
+        //             console.error('Test response error:', error);
+        //             addBotMessage("Sorry, there was an error testing the response.");
+        //         });
+        // }
     </script>
 </body>
 

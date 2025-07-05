@@ -73,6 +73,40 @@ body {
     transform: translateY(-1px);
 }
 
+.chart-mode-btn {
+    background-color: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    border-radius: 3px;
+    padding: 3px 6px;
+    cursor: pointer;
+    font-size: 10px;
+    transition: all 0.2s;
+}
+
+.chart-mode-btn:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-1px);
+}
+
+.chart-mode-btn.btn-success {
+    background-color: rgba(16, 185, 129, 0.8);
+    border-color: rgba(16, 185, 129, 0.9);
+}
+
+.chart-mode-btn.btn-success:hover {
+    background-color: rgba(16, 185, 129, 0.9);
+}
+
+.mode-indicator {
+    font-size: 8px;
+    font-weight: bold;
+    margin-left: 4px;
+    padding: 1px 3px;
+    border-radius: 2px;
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
 .conversation-count {
     font-size: 10px;
     opacity: 0.8;
@@ -221,12 +255,19 @@ body {
 }
 
 /* Table styles */
+.table-container {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    margin: 10px 0;
+}
+
 .data-table {
     width: 100%;
     border-collapse: collapse;
-    margin: 10px 0;
     font-size: 11px;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+    background: white;
 }
 
 .data-table th {
@@ -235,6 +276,9 @@ body {
     padding: 8px;
     text-align: left;
     font-size: 11px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
 }
 
 .data-table td {
@@ -262,6 +306,77 @@ body {
     border-radius: 4px;
 }
 
+.chart-controls {
+    margin: 8px 0;
+    text-align: center;
+}
+
+.chart-controls .chart-mode-btn {
+    background-color: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: var(--primary-color);
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 10px;
+    transition: all 0.2s;
+}
+
+.chart-controls .chart-mode-btn:hover {
+    background-color: rgba(59, 130, 246, 0.2);
+    transform: translateY(-1px);
+}
+
+.chart-controls .chart-mode-btn.btn-success {
+    background-color: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+    color: var(--success-color);
+}
+
+.chart-controls .chart-mode-btn.btn-success:hover {
+    background-color: rgba(16, 185, 129, 0.2);
+}
+
+.download-btn {
+    background-color: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: var(--primary-color);
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 10px;
+    transition: all 0.2s;
+    margin-left: 6px;
+}
+
+.download-btn:hover {
+    background-color: rgba(59, 130, 246, 0.2);
+    transform: translateY(-1px);
+}
+
+.table-controls {
+    margin: 8px 0;
+    text-align: center;
+}
+
+.table-controls .download-btn {
+    margin: 0 6px;
+}
+
+.chart-placeholder {
+    background-color: #f8f9fa;
+    border: 1px dashed #dee2e6;
+    border-radius: 4px;
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.chart-placeholder p {
+    margin: 0;
+}
+
 /* SQL info */
 .sql-info {
     margin-top: 8px;
@@ -275,11 +390,32 @@ body {
 }
 
 .toggle-sql {
-    color: var(--primary-color);
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #dc2626;
+    padding: 8px 12px;
     cursor: pointer;
-    font-size: 10px;
-    margin-top: 4px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-bottom: 8px;
+    transition: all 0.2s;
+    font-weight: 600;
     display: inline-block;
+}
+
+.toggle-sql:hover {
+    background-color: rgba(239, 68, 68, 0.2);
+}
+
+.message-counter {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+    border-radius: 12px;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    min-width: 20px;
+    text-align: center;
 }
 
 /* Documentation styles */
