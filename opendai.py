@@ -441,6 +441,41 @@ def session_info():
     session_manager.init_session()
     return jsonify(session_manager.get_session_info())
 
+@app.route('/generate_static_chart', methods=['POST'])
+def generate_static_chart():
+    """Generate a static chart image from data"""
+    try:
+        session_manager.init_session()
+        
+        data = request.json
+        if not data:
+            return jsonify({"error": "Invalid request data"}), 400
+            
+        chart_type = data.get('chart_type', 'bar')
+        chart_data = data.get('data', [])
+        
+        if not chart_data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        # Convert data to DataFrame
+        df = pd.DataFrame(chart_data)
+        
+        # Generate the chart using the response formatter
+        chart_image = response_formatter.generate_visualization(df, chart_type)
+        
+        if chart_image:
+            return jsonify({
+                "success": True,
+                "image_data": chart_image,
+                "chart_type": chart_type
+            })
+        else:
+            return jsonify({"error": "Failed to generate chart"}), 500
+            
+    except Exception as e:
+        logging.error(f"Error generating static chart: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/batch_chat', methods=['POST'])
 def batch_chat():
     try:
