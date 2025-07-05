@@ -11,46 +11,46 @@ This directory contains comprehensive documentation for the DB Report Chat App. 
 | Document | Purpose | Audience | Key Topics |
 |----------|---------|----------|------------|
 | **[README.md](../README.md)** | Project overview and quick start | All users | Installation, features, usage examples |
-| **[DEVELOPER_HINTS.md](DEVELOPER_HINTS.md)** | Development guide and debugging | Developers | Code flow, debugging, architecture |
-| **[ARCHITECTURE.md](ARCHITECTURE.md)** | System architecture details | Developers, Architects | Design patterns, data flow, modules |
+| **[DEVELOPER_HINTS.md](./DEVELOPER_HINTS.md)** | Development guide and debugging | Developers | Code flow, debugging, architecture |
+| **[ARCHITECTURE.md](./ARCHITECTURE.md)** | System architecture details | Developers, Architects | Design patterns, data flow, modules |
 
 ### **Technical Documentation**
 
 | Document | Purpose | Audience | Key Topics |
 |----------|---------|----------|------------|
-| **[API.md](API.md)** | API reference and endpoints | Developers, Integrators | REST endpoints, request/response formats |
-| **[CONFIGURATION.md](CONFIGURATION.md)** | Environment and deployment setup | DevOps, Developers | Environment variables, deployment |
-| **[TESTING.md](TESTING.md)** | Testing strategy and execution | Developers, QA | Unit tests, integration tests, coverage |
+| **[API.md](./API.md)** | API reference and endpoints | Developers, Integrators | REST endpoints, request/response formats |
+| **[CONFIGURATION.md](./CONFIGURATION.md)** | Environment and deployment setup | DevOps, Developers | Environment variables, deployment |
+| **[TESTING.md](./TESTING.md)** | Testing strategy and execution | Developers, QA | Unit tests, integration tests, coverage |
 
 ### **Specialized Documentation**
 
 | Document | Purpose | Audience | Key Topics |
 |----------|---------|----------|------------|
-| **[PROMPT_MATRIX.md](PROMPT_MATRIX.md)** | Prompt engineering and optimization | AI Engineers | Prompt strategies, optimization tracking |
-| **[CHART_BEHAVIOR.md](CHART_BEHAVIOR.md)** | Chart generation and visualization | Frontend Developers | Chart types, rendering, customization |
+| **[PROMPT_MATRIX.md](./PROMPT_MATRIX.md)** | Prompt engineering and optimization | AI Engineers | Prompt strategies, optimization tracking |
+| **[CHART_BEHAVIOR.md](./CHART_BEHAVIOR.md)** | Chart generation and visualization | Frontend Developers | Chart types, rendering, customization |
 
 ## 🎯 **Documentation by Use Case**
 
 ### **Getting Started**
 1. **[README.md](../README.md)** - Quick start and overview
-2. **[CONFIGURATION.md](CONFIGURATION.md)** - Environment setup
-3. **[DEVELOPER_HINTS.md](DEVELOPER_HINTS.md)** - Running the application
+2. **[CONFIGURATION.md](./CONFIGURATION.md)** - Environment setup
+3. **[DEVELOPER_HINTS.md](./DEVELOPER_HINTS.md)** - Running the application
 
 ### **Development**
-1. **[DEVELOPER_HINTS.md](DEVELOPER_HINTS.md)** - Development workflow
-2. **[ARCHITECTURE.md](ARCHITECTURE.md)** - System understanding
-3. **[API.md](API.md)** - API integration
-4. **[TESTING.md](TESTING.md)** - Testing procedures
+1. **[DEVELOPER_HINTS.md](./DEVELOPER_HINTS.md)** - Development workflow
+2. **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System understanding
+3. **[API.md](./API.md)** - API integration
+4. **[TESTING.md](./TESTING.md)** - Testing procedures
 
 ### **Deployment**
-1. **[CONFIGURATION.md](CONFIGURATION.md)** - Production setup
-2. **[ARCHITECTURE.md](ARCHITECTURE.md)** - System requirements
-3. **[API.md](API.md)** - API documentation
+1. **[CONFIGURATION.md](./CONFIGURATION.md)** - Production setup
+2. **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System requirements
+3. **[API.md](./API.md)** - API documentation
 
 ### **AI/ML Integration**
-1. **[PROMPT_MATRIX.md](PROMPT_MATRIX.md)** - Prompt engineering
-2. **[CHART_BEHAVIOR.md](CHART_BEHAVIOR.md)** - Visualization
-3. **[DEVELOPER_HINTS.md](DEVELOPER_HINTS.md)** - LLM integration
+1. **[PROMPT_MATRIX.md](./PROMPT_MATRIX.md)** - Prompt engineering
+2. **[CHART_BEHAVIOR.md](./CHART_BEHAVIOR.md)** - Visualization
+3. **[DEVELOPER_HINTS.md](./DEVELOPER_HINTS.md)** - LLM integration
 
 ## 📊 **Documentation Statistics**
 

@@ -446,4 +446,4 @@ ENABLE_DEBUG_LOGGING=True
 
 ---
 
-For more information about the application architecture and API usage, see the [Architecture Guide](ARCHITECTURE.md) and [API Reference](API.md). 
+For more information about the application architecture and API usage, see the [Architecture Guide](/docs/ARCHITECTURE.md) and [API Reference](/docs/API.md). 

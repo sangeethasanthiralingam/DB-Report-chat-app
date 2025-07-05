@@ -606,10 +606,10 @@ If you want to complete the modular migration:
 
 ## 📖 **Additional Resources**
 
-- **Architecture Guide**: [docs/ARCHITECTURE.md](ARCHITECTURE.md)
-- **API Reference**: [docs/API.md](API.md)
-- **Configuration Guide**: [docs/CONFIGURATION.md](CONFIGURATION.md)
-- **Testing Guide**: [docs/TESTING.md](TESTING.md)
+- **Architecture Guide**: [ARCHITECTURE.md](./ARCHITECTURE.md)
+- **API Reference**: [API.md](./API.md)
+- **Configuration Guide**: [CONFIGURATION.md](./CONFIGURATION.md)
+- **Testing Guide**: [TESTING.md](./TESTING.md)
 
 ---
 

@@ -28,12 +28,15 @@ def main():
                     clean_path = 'index.html'
                 return os.path.join('docs', 'presentation', clean_path)
             
-            # Handle requests for markdown files
-            if path.endswith('.md') and not path.startswith('/presentation/'):
+            # Handle requests for markdown files in docs directory
+            if path.startswith('/docs/') and path.endswith('.md'):
                 # Serve markdown files from docs directory
-                if path.startswith('/'):
-                    path = path[1:]  # Remove leading slash
-                return os.path.join('docs', path)
+                clean_path = path[6:]  # Remove '/docs/' prefix
+                return os.path.join('docs', clean_path)
+            
+            # Handle requests for README.md in root
+            if path == '/README.md':
+                return 'README.md'
             
             # Default behavior for other files
             return super().translate_path(path)

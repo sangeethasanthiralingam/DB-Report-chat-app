@@ -29,8 +29,12 @@ class DocumentationPresenter {
         this.loadMarkdownFile(this.currentFile);
         this.setupMarkedOptions();
         
-        // Build search index in background
-        this.buildSearchIndex();
+        // Build search index in background (non-blocking)
+        setTimeout(() => {
+            this.buildSearchIndex().catch(error => {
+                console.error('Search index building failed:', error);
+            });
+        }, 1000);
     }
 
     checkLibraries() {
@@ -387,6 +391,21 @@ class DocumentationPresenter {
     async buildSearchIndex() {
         console.log('Building search index...');
         this.searchIndex = [];
+        
+        // First, test if server is accessible
+        try {
+            const testResponse = await fetch('/README.md');
+            if (!testResponse.ok) {
+                console.warn('Server test failed - README.md not accessible');
+                console.warn('This might indicate the server is not running or running from wrong directory');
+                return;
+            }
+            console.log('✅ Server accessibility test passed');
+        } catch (error) {
+            console.warn('❌ Server accessibility test failed:', error.message);
+            console.warn('Search index building will be skipped');
+            return;
+        }
         
         const pageNames = {
             'README.md': 'Project Overview',

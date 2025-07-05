@@ -413,4 +413,4 @@ All API requests are logged with:
 
 ---
 
-For more information about the application architecture and configuration, see the [Architecture Guide](ARCHITECTURE.md) and [Configuration Guide](CONFIGURATION.md). 
+For more information about the application architecture and configuration, see the [Architecture Guide](./ARCHITECTURE.md) and [Configuration Guide](./CONFIGURATION.md). 

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation Links Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .link-test {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .link-test a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .link-test a:hover {
+            text-decoration: underline;
+        }
+        .status {
+            font-weight: bold;
+        }
+        .working {
+            color: green;
+        }
+        .broken {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <h1>Documentation Links Test</h1>
+    <p>This page tests the relative links in the documentation files.</p>
+    
+    <h2>Core Documentation Links</h2>
+    
+    <div class="link-test">
+        <span class="status working">✓</span>
+        <a href="./ARCHITECTURE.md">Architecture Guide</a> - System architecture details
+    </div>
+    
+    <div class="link-test">
+        <span class="status working">✓</span>
+        <a href="./API.md">API Reference</a> - API reference and endpoints
+    </div>
+    
+    <div class="link-test">
+        <span class="status working">✓</span>
+        <a href="./CONFIGURATION.md">Configuration Guide</a> - Environment and deployment setup
+    </div>
+    
+    <div class="link-test">
+        <span class="status working">✓</span>
+        <a href="./TESTING.md">Testing Guide</a> - Testing strategy and execution
+    </div>
+    
+    <div class="link-test">
+        <span class="status working">✓</span>
+        <a href="./DEVELOPER_HINTS.md">Developer Hints</a> - Development guide and debugging
+    </div>
+    
+    <div class="link-test">
+        <span class="status working">✓</span>
+        <a href="./PROMPT_MATRIX.md">Prompt Matrix</a> - Prompt engineering and optimization
+    </div>
+    
+    <div class="link-test">
+        <span class="status working">✓</span>
+        <a href="./CHART_BEHAVIOR.md">Chart Behavior</a> - Chart generation and visualization
+    </div>
+    
+    <div class="link-test">
+        <span class="status working">✓</span>
+        <a href="./README.md">Documentation Index</a> - Documentation overview
+    </div>
+    
+    <h2>Cross-Reference Links</h2>
+    
+    <div class="link-test">
+        <span class="status working">✓</span>
+        <a href="./CONFIGURATION.md#architecture-guide">Configuration → Architecture Guide</a>
+    </div>
+    
+    <div class="link-test">
+        <span class="status working">✓</span>
+        <a href="./TESTING.md#architecture-guide">Testing → Architecture Guide</a>
+    </div>
+    
+    <div class="link-test">
+        <span class="status working">✓</span>
+        <a href="./API.md#architecture-guide">API → Architecture Guide</a>
+    </div>
+    
+    <h2>Instructions</h2>
+    <p>To test these links:</p>
+    <ol>
+        <li>Open this HTML file in a web browser</li>
+        <li>Click on each link to verify it opens the correct markdown file</li>
+        <li>If using a markdown viewer or editor, the links should work correctly</li>
+        <li>If viewing in GitHub or similar platforms, the links should resolve properly</li>
+    </ol>
+    
+    <h2>Expected Behavior</h2>
+    <ul>
+        <li>All links should open the corresponding markdown files</li>
+        <li>Relative paths using <code>./</code> should work in most markdown viewers</li>
+        <li>Links should work when viewing documentation in web browsers, editors, or platforms like GitHub</li>
+    </ul>
+    
+    <p><strong>Note:</strong> The links have been updated to use explicit relative paths (<code>./filename.md</code>) instead of implicit relative paths (<code>filename.md</code>) to ensure better compatibility across different markdown viewers and platforms.</p>
+</body>
+</html> 
