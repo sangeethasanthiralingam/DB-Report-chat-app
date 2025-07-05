@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DB Report Chat App - Documentation</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.7.0/lib/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.7.0/styles/github.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2><i class="fas fa-database"></i> DB Report Chat App</h2>
+                <p>Documentation Center</p>
+            </div>
+            
+            <div class="nav-section">
+                <h3><i class="fas fa-rocket"></i> Getting Started</h3>
+                <ul>
+                    <li><a href="#" data-file="README.md" class="nav-link active">
+                        <i class="fas fa-home"></i> Project Overview
+                    </a></li>
+                    <li><a href="#" data-file="CONFIGURATION.md" class="nav-link">
+                        <i class="fas fa-cog"></i> Configuration Guide
+                    </a></li>
+                    <li><a href="#" data-file="DEVELOPER_HINTS.md" class="nav-link">
+                        <i class="fas fa-code"></i> Developer Hints
+                    </a></li>
+                </ul>
+            </div>
+
+            <div class="nav-section">
+                <h3><i class="fas fa-architecture"></i> Architecture</h3>
+                <ul>
+                    <li><a href="#" data-file="ARCHITECTURE.md" class="nav-link">
+                        <i class="fas fa-sitemap"></i> System Architecture
+                    </a></li>
+                    <li><a href="#" data-file="REQUEST_RESPONSE_FLOW.md" class="nav-link">
+                        <i class="fas fa-project-diagram"></i> Request-Response Flow
+                    </a></li>
+                </ul>
+            </div>
+
+            <div class="nav-section">
+                <h3><i class="fas fa-tools"></i> Technical Docs</h3>
+                <ul>
+                    <li><a href="#" data-file="API.md" class="nav-link">
+                        <i class="fas fa-plug"></i> API Reference
+                    </a></li>
+                    <li><a href="#" data-file="TESTING.md" class="nav-link">
+                        <i class="fas fa-vial"></i> Testing Guide
+                    </a></li>
+                </ul>
+            </div>
+
+            <div class="nav-section">
+                <h3><i class="fas fa-chart-bar"></i> Specialized</h3>
+                <ul>
+                    <li><a href="#" data-file="CHART_BEHAVIOR.md" class="nav-link">
+                        <i class="fas fa-chart-line"></i> Chart Behavior
+                    </a></li>
+                    <li><a href="#" data-file="PROMPT_MATRIX.md" class="nav-link">
+                        <i class="fas fa-brain"></i> Prompt Engineering
+                    </a></li>
+                </ul>
+            </div>
+
+            <div class="nav-section">
+                <h3><i class="fas fa-info-circle"></i> About</h3>
+                <ul>
+                    <li><a href="#" data-file="README.md" class="nav-link">
+                        <i class="fas fa-book"></i> Documentation Index
+                    </a></li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <header class="content-header">
+                <div class="breadcrumb">
+                    <span id="current-page">Project Overview</span>
+                </div>
+                <div class="search-container">
+                    <div class="search-box">
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" id="search-input" placeholder="Search documentation... (Ctrl+K)" autocomplete="off">
+                        <button id="search-clear" class="search-clear" style="display: none;">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div id="search-results" class="search-results" style="display: none;">
+                        <!-- Search results will appear here -->
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button id="print-btn" class="btn btn-secondary">
+                        <i class="fas fa-print"></i> Print
+                    </button>
+                    <button id="fullscreen-btn" class="btn btn-secondary">
+                        <i class="fas fa-expand"></i> Fullscreen
+                    </button>
+                </div>
+            </header>
+
+            <div class="content-wrapper">
+                <div id="content" class="markdown-content">
+                    <!-- Content will be loaded here -->
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading documentation...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Table of Contents -->
+            <aside class="toc-sidebar" id="toc-sidebar">
+                <div class="toc-header">
+                    <h4><i class="fas fa-list"></i> Table of Contents</h4>
+                    <button class="toc-toggle" id="toc-toggle">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div id="toc-content" class="toc-content">
+                    <!-- TOC will be generated here -->
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <script src="script.js?v=2"></script>
+</body>
+</html> 

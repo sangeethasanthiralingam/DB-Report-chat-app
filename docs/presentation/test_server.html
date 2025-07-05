@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Test - DB Report Chat App</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Server Test - DB Report Chat App</h1>
+    
+    <div class="test-section info">
+        <h2>Current URL Information</h2>
+        <p><strong>Current URL:</strong> <span id="current-url"></span></p>
+        <p><strong>Base URL:</strong> <span id="base-url"></span></p>
+        <p><strong>Document Root:</strong> <span id="doc-root"></span></p>
+    </div>
+
+    <div class="test-section">
+        <h2>File Access Tests</h2>
+        <button onclick="testFile('/README.md')">Test README.md</button>
+        <button onclick="testFile('/docs/ARCHITECTURE.md')">Test ARCHITECTURE.md</button>
+        <button onclick="testFile('/docs/API.md')">Test API.md</button>
+        <button onclick="testFile('/docs/CONFIGURATION.md')">Test CONFIGURATION.md</button>
+        <div id="test-results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Navigation Test</h2>
+        <button onclick="window.location.href='index.html'">Go to Presentation</button>
+        <button onclick="window.location.href='../'">Go to docs/</button>
+        <button onclick="window.location.href='../../'">Go to project root</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Debug Information</h2>
+        <pre id="debug-info"></pre>
+    </div>
+
+    <script>
+        // Display current URL information
+        document.getElementById('current-url').textContent = window.location.href;
+        document.getElementById('base-url').textContent = window.location.origin;
+        document.getElementById('doc-root').textContent = window.location.pathname;
+
+        // Test file access
+        async function testFile(filePath) {
+            const resultsDiv = document.getElementById('test-results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'test-section';
+            
+            try {
+                console.log(`Testing file: ${filePath}`);
+                const response = await fetch(filePath);
+                console.log(`Response: ${response.status} ${response.statusText}`);
+                
+                if (response.ok) {
+                    resultDiv.className += ' success';
+                    resultDiv.innerHTML = `
+                        <h3>✅ ${filePath}</h3>
+                        <p>Status: ${response.status} ${response.statusText}</p>
+                        <p>Content-Type: ${response.headers.get('content-type')}</p>
+                    `;
+                } else {
+                    resultDiv.className += ' error';
+                    resultDiv.innerHTML = `
+                        <h3>❌ ${filePath}</h3>
+                        <p>Status: ${response.status} ${response.statusText}</p>
+                        <p>Error: File not found or not accessible</p>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.className += ' error';
+                resultDiv.innerHTML = `
+                    <h3>❌ ${filePath}</h3>
+                    <p>Error: ${error.message}</p>
+                `;
+            }
+            
+            resultsDiv.appendChild(resultDiv);
+        }
+
+        // Display debug information
+        const debugInfo = {
+            'User Agent': navigator.userAgent,
+            'Window Location': {
+                'href': window.location.href,
+                'origin': window.location.origin,
+                'pathname': window.location.pathname,
+                'search': window.location.search,
+                'hash': window.location.hash
+            },
+            'Document': {
+                'title': document.title,
+                'URL': document.URL,
+                'baseURI': document.baseURI
+            },
+            'Fetch Available': typeof fetch !== 'undefined',
+            'Console Available': typeof console !== 'undefined'
+        };
+
+        document.getElementById('debug-info').textContent = JSON.stringify(debugInfo, null, 2);
+
+        // Auto-test on load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                testFile('/README.md');
+                testFile('/docs/ARCHITECTURE.md');
+            }, 1000);
+        });
+    </script>
+</body>
+</html> 

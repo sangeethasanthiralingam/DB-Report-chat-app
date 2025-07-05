@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug - DB Report Chat App Presentation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .warning { color: #ffc107; font-weight: bold; }
+        .info { color: #17a2b8; }
+        .test-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover { background: #0056b3; }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-family: monospace;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .markdown-preview {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            background: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Debug - DB Report Chat App Presentation</h1>
+        
+        <div class="test-section">
+            <h2>📊 Server Status</h2>
+            <p class="success">✅ Server is running on port 8000</p>
+            <p class="info">Current URL: <span id="current-url"></span></p>
+        </div>
+
+        <div class="test-section">
+            <h2>📁 File Loading Tests</h2>
+            <button class="test-button" onclick="testFileLoading()">Test File Loading</button>
+            <div id="file-results" class="log"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>📖 Markdown Loading Tests</h2>
+            <button class="test-button" onclick="testMarkdownLoading()">Test Markdown Files</button>
+            <div id="markdown-results" class="log"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>🎨 CSS Loading Test</h2>
+            <button class="test-button" onclick="testCSSLoading()">Test CSS</button>
+            <div id="css-results" class="log"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>⚡ JavaScript Loading Test</h2>
+            <button class="test-button" onclick="testJSLoading()">Test JavaScript</button>
+            <div id="js-results" class="log"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>📝 Markdown Rendering Test</h2>
+            <button class="test-button" onclick="testMarkdownRendering()">Test Markdown Rendering</button>
+            <div id="markdown-render-results" class="log"></div>
+            <div id="markdown-preview" class="markdown-preview"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>🔧 Browser Information</h2>
+            <div id="browser-info" class="log"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>🚀 Quick Fixes</h2>
+            <p class="info">If tests show issues, try these solutions:</p>
+            <ol>
+                <li><strong>Hard Refresh:</strong> Press Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac)</li>
+                <li><strong>Clear Cache:</strong> Clear browser cache completely</li>
+                <li><strong>Try Different Browser:</strong> Chrome, Firefox, Edge, Safari</li>
+                <li><strong>Check Console:</strong> Press F12 and look for red error messages</li>
+                <li><strong>Disable Extensions:</strong> Try incognito/private browsing mode</li>
+            </ol>
+        </div>
+
+        <div class="test-section">
+            <h2>🔗 Direct Links</h2>
+            <a href="/docs/presentation/" class="test-button" style="text-decoration: none;">📖 Main Presentation</a>
+            <a href="/docs/presentation/test.html" class="test-button" style="text-decoration: none;">🧪 Test Page</a>
+            <a href="/README.md" class="test-button" style="text-decoration: none;">📄 README</a>
+        </div>
+    </div>
+
+    <script>
+        // Display current URL
+        document.getElementById('current-url').textContent = window.location.href;
+
+        // Display browser information
+        function displayBrowserInfo() {
+            const info = {
+                'User Agent': navigator.userAgent,
+                'Platform': navigator.platform,
+                'Language': navigator.language,
+                'Cookies Enabled': navigator.cookieEnabled,
+                'Online': navigator.onLine,
+                'Screen Resolution': `${screen.width}x${screen.height}`,
+                'Window Size': `${window.innerWidth}x${window.innerHeight}`
+            };
+            
+            let html = '';
+            for (const [key, value] of Object.entries(info)) {
+                html += `<strong>${key}:</strong> ${value}<br>`;
+            }
+            document.getElementById('browser-info').innerHTML = html;
+        }
+
+        // Test file loading
+        async function testFileLoading() {
+            const results = document.getElementById('file-results');
+            results.innerHTML = 'Testing file loading...<br>';
+            
+            const files = [
+                'styles.css',
+                'script.js',
+                'index.html'
+            ];
+            
+            for (const file of files) {
+                try {
+                    const response = await fetch(file);
+                    if (response.ok) {
+                        results.innerHTML += `<span class="success">✅ ${file}: OK (${response.status})</span><br>`;
+                    } else {
+                        results.innerHTML += `<span class="error">❌ ${file}: Failed (${response.status})</span><br>`;
+                    }
+                } catch (error) {
+                    results.innerHTML += `<span class="error">❌ ${file}: Error - ${error.message}</span><br>`;
+                }
+            }
+        }
+
+        // Test markdown loading
+        async function testMarkdownLoading() {
+            const results = document.getElementById('markdown-results');
+            results.innerHTML = 'Testing markdown files...<br>';
+            
+            const files = [
+                '/README.md',
+                '/docs/ARCHITECTURE.md',
+                '/docs/API.md',
+                '/docs/CONFIGURATION.md'
+            ];
+            
+            for (const file of files) {
+                try {
+                    const response = await fetch(file);
+                    if (response.ok) {
+                        const text = await response.text();
+                        results.innerHTML += `<span class="success">✅ ${file}: OK (${text.length} chars)</span><br>`;
+                    } else {
+                        results.innerHTML += `<span class="error">❌ ${file}: Failed (${response.status})</span><br>`;
+                    }
+                } catch (error) {
+                    results.innerHTML += `<span class="error">❌ ${file}: Error - ${error.message}</span><br>`;
+                }
+            }
+        }
+
+        // Test CSS loading
+        async function testCSSLoading() {
+            const results = document.getElementById('css-results');
+            results.innerHTML = 'Testing CSS loading...<br>';
+            
+            try {
+                const response = await fetch('styles.css');
+                if (response.ok) {
+                    const css = await response.text();
+                    results.innerHTML += `<span class="success">✅ CSS loaded successfully (${css.length} chars)</span><br>`;
+                    results.innerHTML += `<span class="info">CSS contains ${css.split('{').length - 1} rules</span><br>`;
+                } else {
+                    results.innerHTML += `<span class="error">❌ CSS failed to load (${response.status})</span><br>`;
+                }
+            } catch (error) {
+                results.innerHTML += `<span class="error">❌ CSS error: ${error.message}</span><br>`;
+            }
+        }
+
+        // Test JavaScript loading
+        async function testJSLoading() {
+            const results = document.getElementById('js-results');
+            results.innerHTML = 'Testing JavaScript loading...<br>';
+            
+            try {
+                const response = await fetch('script.js');
+                if (response.ok) {
+                    const js = await response.text();
+                    results.innerHTML += `<span class="success">✅ JavaScript loaded successfully (${js.length} chars)</span><br>`;
+                    
+                    // Test if marked library is available
+                    if (typeof marked !== 'undefined') {
+                        results.innerHTML += `<span class="success">✅ Marked library is available</span><br>`;
+                    } else {
+                        results.innerHTML += `<span class="warning">⚠️ Marked library not loaded</span><br>`;
+                    }
+                } else {
+                    results.innerHTML += `<span class="error">❌ JavaScript failed to load (${response.status})</span><br>`;
+                }
+            } catch (error) {
+                results.innerHTML += `<span class="error">❌ JavaScript error: ${error.message}</span><br>`;
+            }
+        }
+
+        // Test markdown rendering
+        async function testMarkdownRendering() {
+            const results = document.getElementById('markdown-render-results');
+            const preview = document.getElementById('markdown-preview');
+            results.innerHTML = 'Testing markdown rendering...<br>';
+            
+            try {
+                const response = await fetch('/README.md');
+                if (response.ok) {
+                    const markdown = await response.text();
+                    results.innerHTML += `<span class="success">✅ README.md loaded (${markdown.length} chars)</span><br>`;
+                    
+                    if (typeof marked !== 'undefined') {
+                        const html = marked.parse(markdown.substring(0, 500) + '...');
+                        preview.innerHTML = html;
+                        results.innerHTML += `<span class="success">✅ Markdown rendered successfully</span><br>`;
+                    } else {
+                        results.innerHTML += `<span class="error">❌ Marked library not available</span><br>`;
+                        preview.innerHTML = '<span class="error">Cannot render markdown - Marked library not loaded</span>';
+                    }
+                } else {
+                    results.innerHTML += `<span class="error">❌ README.md failed to load (${response.status})</span><br>`;
+                }
+            } catch (error) {
+                results.innerHTML += `<span class="error">❌ Markdown rendering error: ${error.message}</span><br>`;
+            }
+        }
+
+        // Initialize
+        displayBrowserInfo();
+        
+        // Log any console errors
+        window.addEventListener('error', function(e) {
+            console.error('Page error:', e.error);
+            const results = document.getElementById('js-results');
+            if (results) {
+                results.innerHTML += `<span class="error">❌ JavaScript Error: ${e.message}</span><br>`;
+            }
+        });
+    </script>
+</body>
+</html> 
